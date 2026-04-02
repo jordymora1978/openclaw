@@ -274,6 +274,7 @@ RUN mkdir -p /home/node/.openclaw && cat > /home/node/.openclaw/config.json <<'O
   }
 }
 OCEOF
+COPY skills/dropux /app/skills/dropux
 ENV OPENCLAW_CONFIG_PATH=/home/node/.openclaw/config.json
 HEALTHCHECK --interval=3m --timeout=10s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
