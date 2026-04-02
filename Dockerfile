@@ -257,7 +257,7 @@ RUN mkdir -p /home/node/.openclaw && cat > /home/node/.openclaw/config.json <<'O
 {
   "agents": {
     "defaults": {
-      "model": "openai/gpt-4o-mini"
+      "model": "openai/gpt-4o"
     }
   },
   "channels": {
