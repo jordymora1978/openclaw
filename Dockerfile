@@ -253,7 +253,8 @@ USER node
 #   - GET /healthz (liveness) and GET /readyz (readiness)
 #   - aliases: /health and /ready
 # For external access from host/ingress, override bind to "lan" and set auth.
+RUN mkdir -p /home/node/.openclaw && echo '{"gateway":{"controlUi":{"dangerouslyAllowHostHeaderOriginFallback":true}}}' > /home/node/.openclaw/config.json
+ENV OPENCLAW_CONFIG_PATH=/home/node/.openclaw/config.json
 HEALTHCHECK --interval=3m --timeout=10s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-ENV OPENCLAW_GATEWAY__CONTROL_UI__DANGEROUSLY_ALLOW_HOST_HEADER_ORIGIN_FALLBACK=true
 CMD ["node", "openclaw.mjs", "gateway", "--allow-unconfigured", "--bind", "lan"]
