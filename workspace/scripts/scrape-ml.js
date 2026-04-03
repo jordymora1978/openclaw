@@ -113,8 +113,15 @@ async function switchCountry(page, country) {
     await page.locator('.nav-header-cbt__site-switcher-trigger').first().click({ timeout: 5000 });
     await page.waitForTimeout(1000);
 
-    // Click en el nombre del país
-    await page.getByText(country, { exact: true }).click({ timeout: 5000 });
+    // Click en la opción del país por data-value
+    const siteId = ML_SITE_IDS[country];
+    const option = page.locator(`[data-value="${siteId}"]`).first();
+    if (await option.count() > 0) {
+      await option.click({ timeout: 5000 });
+    } else {
+      // Fallback: click por texto
+      await page.getByText(country, { exact: true }).first().click({ timeout: 5000 });
+    }
     await page.waitForTimeout(4000);
 
     const val = await page.locator('.nav-header-cbt__site-switcher-value').first().innerText().catch(() => '?');
