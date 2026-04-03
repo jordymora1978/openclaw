@@ -260,6 +260,9 @@ RUN mkdir -p /home/node/.openclaw && cat > /home/node/.openclaw/config.json <<'O
       "model": "openai/gpt-4o"
     }
   },
+  "tools": {
+    "profile": "full"
+  },
   "channels": {
     "telegram": {
       "enabled": true,
