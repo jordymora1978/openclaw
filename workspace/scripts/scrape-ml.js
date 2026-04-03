@@ -105,19 +105,23 @@ async function loginIfNeeded(page) {
 async function switchCountry(page, country) {
   console.log(`[COUNTRY] Switching to ${country}...`);
   try {
-    // Click header site switcher
+    // Ir a /help/v2 donde el dropdown de países del header funciona
+    await page.goto('https://global-selling.mercadolibre.com/help/v2', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(2000);
+
+    // Click header site switcher trigger
     await page.locator('.nav-header-cbt__site-switcher-trigger').first().click({ timeout: 5000 });
     await page.waitForTimeout(1000);
-    // Click option by data-value
-    await page.locator(`[data-value="${ML_SITE_IDS[country]}"]`).first().click({ timeout: 5000 });
+
+    // Click en el nombre del país
+    await page.getByText(country, { exact: true }).click({ timeout: 5000 });
     await page.waitForTimeout(4000);
 
-    const bodyText = await page.innerText('body');
-    const match = bodyText.match(/Country:\s*(\w+)/);
-    console.log(`[COUNTRY] Now on: ${match ? match[1] : 'unknown'}`);
+    const val = await page.locator('.nav-header-cbt__site-switcher-value').first().innerText().catch(() => '?');
+    console.log(`[COUNTRY] Now on: ${val}`);
     return true;
   } catch (e) {
-    console.error(`[COUNTRY] Failed: ${e.message}`);
+    console.error(`[COUNTRY] Failed: ${e.message.split('\n')[0]}`);
     return false;
   }
 }
@@ -126,6 +130,8 @@ async function switchCountry(page, country) {
 async function scrapeSummary(page, country) {
   console.log(`[SUMMARY] Reading ${country}...`);
   try {
+    await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(3000);
     const text = await page.innerText('body');
 
     // Estado de cuenta
@@ -331,18 +337,11 @@ async function main() {
       const country = COUNTRIES[c];
       console.log(`\n--- ${country} (${c + 1}/${COUNTRIES.length}) ---`);
 
-      // Primer país no necesita switch (ya está en el default)
-      if (c > 0) {
-        const switched = await switchCountry(page, country);
-        if (!switched) {
-          console.error(`[SKIP] Could not switch to ${country}`);
-          results[country] = { error: 'switch failed' };
-          continue;
-        }
-      } else {
-        // Para el primer país, navegar a Summary
-        await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await page.waitForTimeout(3000);
+      const switched = await switchCountry(page, country);
+      if (!switched) {
+        console.error(`[SKIP] Could not switch to ${country}`);
+        results[country] = { error: 'switch failed' };
+        continue;
       }
 
       const summary = await scrapeSummary(page, country);
