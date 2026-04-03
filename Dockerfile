@@ -253,16 +253,27 @@ USER node
 #   - GET /healthz (liveness) and GET /readyz (readiness)
 #   - aliases: /health and /ready
 # For external access from host/ingress, override bind to "lan" and set auth.
-RUN mkdir -p /home/node/.openclaw && \
+RUN mkdir -p /home/node/.openclaw/workspace/memory/casos \
+    /home/node/.openclaw/workspace/memory/patrones \
+    /home/node/.openclaw/workspace/memory/metricas \
+    /home/node/.openclaw/skills/dropux && \
     cat > /home/node/.openclaw/config.json <<'OCEOF'
 {
   "agents": {
     "defaults": {
       "model": "openai/gpt-4o-mini"
-    }
-  },
-  "tools": {
-    "profile": "full"
+    },
+    "list": [
+      {
+        "id": "main",
+        "default": true,
+        "name": "Dropux Ops",
+        "workspace": "/home/node/.openclaw/workspace",
+        "tools": {
+          "profile": "full"
+        }
+      }
+    ]
   },
   "skills": {
     "entries": {
@@ -274,6 +285,21 @@ RUN mkdir -p /home/node/.openclaw && \
       "enabled": true,
       "dmPolicy": "allowlist",
       "allowFrom": ["1742300220"]
+    }
+  },
+  "cron": {
+    "enabled": true,
+    "maxConcurrentRuns": 1,
+    "sessionRetention": "24h",
+    "retry": {
+      "maxAttempts": 2,
+      "backoffMs": [30000, 60000],
+      "retryOn": ["network", "timeout", "server_error"]
+    },
+    "failureAlert": {
+      "enabled": true,
+      "after": 2,
+      "cooldownMs": 3600000
     }
   },
   "gateway": {
@@ -300,7 +326,11 @@ RUN cat > /home/node/.openclaw/exec-approvals.json <<'EAEOF'
   }
 }
 EAEOF
-RUN mkdir -p /home/node/.openclaw/skills/dropux
+COPY --chown=node:node workspace/AGENTS.md /home/node/.openclaw/workspace/AGENTS.md
+COPY --chown=node:node workspace/SOUL.md /home/node/.openclaw/workspace/SOUL.md
+COPY --chown=node:node workspace/USER.md /home/node/.openclaw/workspace/USER.md
+COPY --chown=node:node workspace/TOOLS.md /home/node/.openclaw/workspace/TOOLS.md
+COPY --chown=node:node workspace/HEARTBEAT.md /home/node/.openclaw/workspace/HEARTBEAT.md
 COPY --chown=node:node skills/dropux/SKILL.md /home/node/.openclaw/skills/dropux/SKILL.md
 ENV OPENCLAW_CONFIG_PATH=/home/node/.openclaw/config.json
 HEALTHCHECK --interval=3m --timeout=10s --start-period=15s --retries=3 \
