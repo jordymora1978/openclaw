@@ -104,33 +104,39 @@ async function loginIfNeeded(page) {
 // ─── Cambio de País ────────────────────────────────────
 async function switchCountry(page, country) {
   console.log(`[COUNTRY] Switching to ${country}...`);
-  try {
-    // Ir a /help/v2 donde el dropdown de países del header funciona
-    await page.goto('https://global-selling.mercadolibre.com/help/v2', { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await page.waitForTimeout(2000);
+  const siteId = ML_SITE_IDS[country];
 
-    // Click header site switcher trigger
-    await page.locator('.nav-header-cbt__site-switcher-trigger').first().click({ timeout: 5000 });
-    await page.waitForTimeout(1000);
+  // Intentar hasta 2 veces
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      // Ir a /help/v2 donde el dropdown de países del header funciona
+      await page.goto('https://global-selling.mercadolibre.com/help/v2', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await page.waitForTimeout(3000);
 
-    // Click en la opción del país por data-value
-    const siteId = ML_SITE_IDS[country];
-    const option = page.locator(`[data-value="${siteId}"]`).first();
-    if (await option.count() > 0) {
-      await option.click({ timeout: 5000 });
-    } else {
-      // Fallback: click por texto
-      await page.getByText(country, { exact: true }).first().click({ timeout: 5000 });
-    }
+      // Click header site switcher trigger
+      await page.locator('.nav-header-cbt__site-switcher-trigger').first().click({ timeout: 8000 });
+      await page.waitForTimeout(2000);
+
+      // Click en la opción del país por data-value
+      const option = page.locator(`[data-value="${siteId}"]`).first();
+      if (await option.count() > 0) {
+        await option.click({ timeout: 8000 });
+      } else {
+        await page.getByText(country, { exact: true }).first().click({ timeout: 8000 });
+      }
     await page.waitForTimeout(4000);
 
-    const val = await page.locator('.nav-header-cbt__site-switcher-value').first().innerText().catch(() => '?');
-    console.log(`[COUNTRY] Now on: ${val}`);
-    return true;
-  } catch (e) {
-    console.error(`[COUNTRY] Failed: ${e.message.split('\n')[0]}`);
-    return false;
+      await page.waitForTimeout(4000);
+      const val = await page.locator('.nav-header-cbt__site-switcher-value').first().innerText().catch(() => '?');
+      console.log(`[COUNTRY] Now on: ${val}`);
+      return true;
+    } catch (e) {
+      console.error(`[COUNTRY] Attempt ${attempt + 1} failed: ${e.message.split('\n')[0]}`);
+      if (attempt === 1) return false;
+      await page.waitForTimeout(3000);
+    }
   }
+  return false;
 }
 
 // ─── Scrape Summary (reputación + estado) ──────────────
@@ -175,6 +181,9 @@ async function scrapeSummary(page, country) {
     const delMatch = text.match(/Delayed handling[\s\S]*?([\d.]+%)/);
     if (delMatch) delayed = delMatch[1];
 
+    // Fecha Colombia para scraped_date
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+
     const data = {
       store_id: STORE_ID,
       country: COUNTRY_CODES[country],
@@ -182,6 +191,7 @@ async function scrapeSummary(page, country) {
       status_reason: statusReason,
       reputation,
       gross_sales: grossSales,
+      scraped_date: today,
     };
 
     console.log(`[SUMMARY] ${country}: ${accountStatus} | rep=${reputation} | sales=${grossSales}`);
