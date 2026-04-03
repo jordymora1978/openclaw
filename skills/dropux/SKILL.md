@@ -53,7 +53,7 @@ curl -s "$SUPABASE_URL/rest/v1/TABLA?select=COLUMNAS&FILTROS&order=COLUMNA.desc&
 
 **Ordenes de hoy (stores CBT):**
 ```bash
-curl -s "$SUPABASE_URL/rest/v1/orders?select=internal_id,total_amount,currency_id,net_proceeds_usd,store_id,date_created,status&store_id=in.(49,51)&cancelled_at=is.null&date_created=gte.$(date -u +%Y-%m-%d)T00:00:00&order=date_created.desc&limit=50" \
+curl -s "$SUPABASE_URL/rest/v1/orders?select=internal_id,total_amount,currency_id,net_proceeds_usd,store_id,date_created,status&store_id=in.(49,51)&cancelled_at=is.null&date_created=gte.$(TZ='America/Bogota' date +%Y-%m-%d)T00:00:00&order=date_created.desc&limit=50" \
   -H "apikey: $SUPABASE_ANON_KEY" \
   -H "Authorization: Bearer $SUPABASE_ANON_KEY"
 ```
@@ -67,7 +67,7 @@ curl -s "$SUPABASE_URL/rest/v1/orders?select=internal_id,total_amount,currency_i
 
 **Ordenes con profit negativo:**
 ```bash
-curl -s "$SUPABASE_URL/rest/v1/orders?select=internal_id,total_amount,currency_id,net_proceeds_usd,store_id,date_created&store_id=in.(49,51)&net_proceeds_usd=lt.0&cancelled_at=is.null&date_created=gte.$(date -u +%Y-%m-%d)T00:00:00&order=net_proceeds_usd.asc&limit=20" \
+curl -s "$SUPABASE_URL/rest/v1/orders?select=internal_id,total_amount,currency_id,net_proceeds_usd,store_id,date_created&store_id=in.(49,51)&net_proceeds_usd=lt.0&cancelled_at=is.null&date_created=gte.$(TZ='America/Bogota' date +%Y-%m-%d)T00:00:00&order=net_proceeds_usd.asc&limit=20" \
   -H "apikey: $SUPABASE_ANON_KEY" \
   -H "Authorization: Bearer $SUPABASE_ANON_KEY"
 ```
@@ -102,7 +102,7 @@ curl -s "$SUPABASE_URL/rest/v1/publication_jobs?select=id,job_type,status,error_
 
 **Conteo de ordenes (usa header Prefer):**
 ```bash
-curl -s "$SUPABASE_URL/rest/v1/orders?store_id=in.(49,51)&cancelled_at=is.null&date_created=gte.$(date -u +%Y-%m-%d)T00:00:00" \
+curl -s "$SUPABASE_URL/rest/v1/orders?store_id=in.(49,51)&cancelled_at=is.null&date_created=gte.$(TZ='America/Bogota' date +%Y-%m-%d)T00:00:00" \
   -H "apikey: $SUPABASE_ANON_KEY" \
   -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
   -H "Prefer: count=exact" \
@@ -139,4 +139,4 @@ curl -s "$SUPABASE_URL/rest/v1/orders?store_id=in.(49,51)&cancelled_at=is.null&d
 5. SIEMPRE filtra store_id=in.(49,51) por defecto
 6. Muestra internal_id, NO pack_id ni ml_order_id
 7. Fechas: convierte UTC a Colombia (UTC-5)
-8. Para "hoy" usa: $(date -u +%Y-%m-%d)
+8. Para "hoy" usa: $(TZ='America/Bogota' date +%Y-%m-%d)
