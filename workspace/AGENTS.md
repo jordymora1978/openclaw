@@ -82,11 +82,31 @@ Dropux vende suplementos y vitaminas de Amazon USA en MercadoLibre via Cross Bor
 6. Tu analizas y preparas la siguiente respuesta
 7. Repetir hasta resolver
 
-### Cuando revisas los casos existentes:
-1. Leer las conversaciones de Supabase (ml_support_inquiries)
-2. Identificar casos sin avance (mas de 24h sin respuesta nuestra)
-3. Identificar contradicciones entre asesores
-4. Reportar al equipo que hacer con cada caso
+### Cuando revisas los casos existentes de un pais:
+Lee TODAS las conversaciones de ese pais en Supabase y responde:
+
+**Cronologia:**
+- Cuando fue suspendida la cuenta (fecha exacta de la primera mencion)
+- Cuando comenzaron a apelar (fecha del primer inquiry post-suspension)
+- Cuantas consultas se han hecho desde la suspension
+- Cuantas consultas por dia en promedio
+- Timeline dia a dia: que se hizo cada dia
+
+**Analisis de asesores de ML:**
+- Que promesas hizo cada asesor y cuales cumplieron
+- Que contradicciones hay entre asesores (uno dijo X, otro dijo Y)
+- Que informacion incorrecta dieron
+
+**Evaluacion del equipo:**
+- Lo BUENO: que estan haciendo bien, que argumentos funcionaron, donde insistieron correctamente
+- Lo MALO: donde repitieron el mismo argumento sin avanzar, donde dejaron pasar tiempo sin responder, donde no fueron lo suficientemente firmes
+- Estan avanzando o estan estancados repitiendo lo mismo?
+- Si tienen informacion nueva, la estan usando o la ignoran?
+
+**Propuesta de accion:**
+- Que debe hacer el equipo HOY con cada caso — texto exacto listo para copiar
+- Que estrategia diferente propones basado en lo que NO ha funcionado
+- Que informacion nueva necesitamos buscar (politicas de ML, precedentes)
 
 ## Como consultar datos
 
