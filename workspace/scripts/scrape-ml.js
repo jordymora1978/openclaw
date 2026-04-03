@@ -79,14 +79,20 @@ async function login(page) {
 
 async function switchCountry(page, ctx, country) {
   console.log(`[COUNTRY] Switching to ${country}...`);
-  const siteId = ML_SITE_IDS[country];
   try {
-    // Set cookies via Playwright context API (not page.evaluate)
-    await ctx.addCookies([
-      { name: 'cbtSiteId', value: siteId, domain: 'global-selling.mercadolibre.com', path: '/' }
-    ]);
+    // Go to Summary page
     await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(2000);
+
+    // Click "Country: X" dropdown to open it
+    await page.locator('text=Country:').first().click({ timeout: 5000 });
+    await page.waitForTimeout(1000);
+
+    // Click the country name in the dropdown list
+    await page.getByText(country, { exact: true }).click({ timeout: 5000 });
     await page.waitForTimeout(3000);
+
+    // Verify
     const bodyText = await page.innerText('body');
     const countryMatch = bodyText.match(/Country:\s*(\w+)/);
     console.log(`[COUNTRY] Switched to ${country} (page shows: ${countryMatch ? countryMatch[1] : 'unknown'})`);
