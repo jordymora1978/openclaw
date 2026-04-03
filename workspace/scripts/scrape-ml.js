@@ -158,8 +158,26 @@ async function scrapeSummary(page, country) {
   }
 }
 
+async function getExistingInquiries(country) {
+  try {
+    const resp = await fetch(
+      `${SUPABASE_URL}/rest/v1/ml_support_inquiries?select=inquiry_number,inquiry_status&store_id=eq.${STORE_ID}&country=eq.${COUNTRY_CODES[country]}`,
+      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+    );
+    const data = await resp.json();
+    const map = {};
+    for (const row of data) map[row.inquiry_number] = row.inquiry_status;
+    return map;
+  } catch (e) {
+    return {};
+  }
+}
+
 async function scrapeInquiries(page, country) {
   console.log(`[INQUIRIES] Reading ${country}...`);
+  const existing = await getExistingInquiries(country);
+  console.log(`[INQUIRIES] Already in DB: ${Object.keys(existing).length} inquiries`);
+
   try {
     await page.goto('https://global-selling.mercadolibre.com/help', { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
     await page.waitForTimeout(3000);
@@ -243,6 +261,12 @@ async function scrapeInquiries(page, country) {
         }
 
         if (inquiryNumber) {
+          // Skip if already in DB and completed (no changes expected)
+          if (existing[inquiryNumber] === 'completed' && inquiryStatus === 'completed') {
+            console.log(`[INQUIRIES] Skipping ${inquiryNumber} (already completed in DB)`);
+            continue;
+          }
+
           const data = {
             store_id: STORE_ID,
             country: COUNTRY_CODES[country],
@@ -255,7 +279,7 @@ async function scrapeInquiries(page, country) {
 
           await supabasePost('ml_support_inquiries', data);
           inquiries.push(data);
-          console.log(`[INQUIRIES] Saved inquiry ${inquiryNumber} (${inquiryStatus})`);
+          console.log(`[INQUIRIES] Saved inquiry ${inquiryNumber} (${inquiryStatus}) [${existing[inquiryNumber] ? 'updated' : 'new'}]`);
         }
       } catch (e) {
         console.error(`[INQUIRIES] Error reading inquiry ${i + 1}:`, e.message);
