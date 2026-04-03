@@ -12,6 +12,7 @@ const { chromium } = require('/app/node_modules/playwright-core');
 const STORE_ID = 49;
 const COUNTRIES = ['Mexico', 'Brazil', 'Argentina', 'Chile', 'Colombia'];
 const COUNTRY_CODES = { 'Mexico': 'MX', 'Brazil': 'BR', 'Argentina': 'AR', 'Chile': 'CL', 'Colombia': 'CO' };
+const ML_SITE_IDS = { 'Mexico': 'MLM-remote', 'Brazil': 'MLB-remote', 'Argentina': 'MLA-remote', 'Chile': 'MLC-remote', 'Colombia': 'MCO-remote' };
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
 const BROWSERBASE_KEY = process.env.BROWSERBASE_API_KEY;
@@ -75,27 +76,22 @@ async function login(page) {
 
 async function switchCountry(page, country) {
   console.log(`[COUNTRY] Switching to ${country}...`);
+  const siteId = ML_SITE_IDS[country];
   try {
-    // Click country selector in header
-    const countrySelector = page.locator('header').locator('button, a, div').filter({ hasText: /^(MX|BR|AR|CL|CO|Mexico|Brazil|Argentina|Chile|Colombia)/ }).first();
-    await countrySelector.click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(1000);
-
-    // Click the country option
-    await page.getByText(country, { exact: true }).click({ timeout: 5000 });
+    // Set cookies directly (same method ML uses internally)
+    await page.evaluate((sid) => {
+      document.cookie = `cbtSiteId=${sid}; path=/;`;
+    }, siteId);
+    // Reload to apply
+    await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
     await page.waitForTimeout(3000);
-    console.log(`[COUNTRY] Switched to ${country}`);
+    // Verify country switched by checking header text
+    const headerText = await page.locator('.nav-header-cbt__site-switcher-value').innerText().catch(() => '');
+    console.log(`[COUNTRY] Switched to ${country} (header shows: ${headerText})`);
     return true;
   } catch (e) {
     console.error(`[COUNTRY] Failed to switch to ${country}:`, e.message);
-    // Try direct URL approach
-    try {
-      await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
-      await page.waitForTimeout(2000);
-      return true;
-    } catch (e2) {
-      return false;
-    }
+    return false;
   }
 }
 
