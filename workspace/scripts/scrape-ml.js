@@ -12,7 +12,6 @@
  */
 
 const { chromium } = require('/app/node_modules/playwright-core');
-const fs = require('fs');
 
 // ─── Config ────────────────────────────────────────────
 const STORE_ID = 49;
@@ -20,57 +19,11 @@ const COUNTRIES = ['Mexico', 'Brazil', 'Argentina', 'Chile', 'Colombia'];
 const COUNTRY_CODES = { Mexico: 'MX', Brazil: 'BR', Argentina: 'AR', Chile: 'CL', Colombia: 'CO' };
 const ML_SITE_IDS = { Mexico: 'MLM-remote', Brazil: 'MLB-remote', Argentina: 'MLA-remote', Chile: 'MLC-remote', Colombia: 'MCO-remote' };
 
-const BB_API = 'https://api.browserbase.com/v1';
 const BB_KEY = process.env.BROWSERBASE_API_KEY;
-const BB_PROJECT = process.env.BROWSERBASE_PROJECT_ID;
 const ML_USER = process.env.ML_USER_49;
 const ML_PASS = process.env.ML_PASS_49;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
-const CONTEXT_FILE = '/home/node/.openclaw/workspace/scripts/.bb-context-id';
-
-// ─── Browserbase API ───────────────────────────────────
-async function bbFetch(path, method = 'GET', body = null) {
-  const opts = {
-    method,
-    headers: { 'X-BB-API-Key': BB_KEY, 'Content-Type': 'application/json' },
-  };
-  if (body) opts.body = JSON.stringify(body);
-  const resp = await fetch(`${BB_API}${path}`, opts);
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`Browserbase ${method} ${path}: ${resp.status} ${err}`);
-  }
-  return resp.json();
-}
-
-async function getOrCreateContext() {
-  // Reusar contexto si existe
-  if (fs.existsSync(CONTEXT_FILE)) {
-    const id = fs.readFileSync(CONTEXT_FILE, 'utf8').trim();
-    console.log(`[BB] Reusing context: ${id}`);
-    return id;
-  }
-  // Crear nuevo
-  const body = BB_PROJECT ? { projectId: BB_PROJECT } : {};
-  const ctx = await bbFetch('/contexts', 'POST', body);
-  fs.writeFileSync(CONTEXT_FILE, ctx.id);
-  console.log(`[BB] Created new context: ${ctx.id}`);
-  return ctx.id;
-}
-
-async function createSession(contextId) {
-  const body = {
-    browserSettings: {
-      context: { id: contextId, persist: true },
-      solveCaptchas: true,
-    },
-  };
-  if (BB_PROJECT) body.projectId = BB_PROJECT;
-  const session = await bbFetch('/sessions', 'POST', body);
-  console.log(`[BB] Session created: ${session.id}`);
-  return session;
-}
 
 // ─── Supabase ──────────────────────────────────────────
 async function supabaseUpsert(table, data, conflictCols) {
@@ -358,12 +311,9 @@ async function main() {
 
   let browser;
   try {
-    // Obtener o crear contexto persistente
-    const contextId = await getOrCreateContext();
-    const session = await createSession(contextId);
-
-    // Conectar Playwright
-    browser = await chromium.connectOverCDP(session.connectUrl);
+    // Conexión directa a Browserbase (resuelve captcha automáticamente)
+    console.log('[BB] Connecting...');
+    browser = await chromium.connectOverCDP(`wss://connect.browserbase.com?apiKey=${BB_KEY}`);
     const ctx = browser.contexts()[0];
     const page = ctx.pages()[0] || await ctx.newPage();
 
