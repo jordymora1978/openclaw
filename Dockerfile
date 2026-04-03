@@ -253,11 +253,12 @@ USER node
 #   - GET /healthz (liveness) and GET /readyz (readiness)
 #   - aliases: /health and /ready
 # For external access from host/ingress, override bind to "lan" and set auth.
-RUN mkdir -p /home/node/.openclaw && cat > /home/node/.openclaw/config.json <<'OCEOF'
+RUN mkdir -p /home/node/.openclaw && \
+    cat > /home/node/.openclaw/config.json <<'OCEOF'
 {
   "agents": {
     "defaults": {
-      "model": "openai/gpt-4o"
+      "model": "openai/gpt-4o-mini"
     }
   },
   "tools": {
@@ -277,6 +278,23 @@ RUN mkdir -p /home/node/.openclaw && cat > /home/node/.openclaw/config.json <<'O
   }
 }
 OCEOF
+RUN cat > /home/node/.openclaw/exec-approvals.json <<'EAEOF'
+{
+  "version": 1,
+  "defaults": {
+    "security": "full",
+    "ask": "never",
+    "askFallback": "allow"
+  },
+  "agents": {
+    "main": {
+      "security": "full",
+      "ask": "never",
+      "autoAllowSkills": true
+    }
+  }
+}
+EAEOF
 COPY skills/dropux /app/skills/dropux
 ENV OPENCLAW_CONFIG_PATH=/home/node/.openclaw/config.json
 HEALTHCHECK --interval=3m --timeout=10s --start-period=15s --retries=3 \
