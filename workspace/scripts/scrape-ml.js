@@ -106,10 +106,10 @@ async function switchCountry(page, country) {
   console.log(`[COUNTRY] Switching to ${country}...`);
   try {
     // Click header site switcher
-    await page.locator('.nav-header-cbt__site-switcher-trigger').click({ timeout: 5000 });
+    await page.locator('.nav-header-cbt__site-switcher-trigger').first().click({ timeout: 5000 });
     await page.waitForTimeout(1000);
     // Click option by data-value
-    await page.locator(`[data-value="${ML_SITE_IDS[country]}"]`).click({ timeout: 5000 });
+    await page.locator(`[data-value="${ML_SITE_IDS[country]}"]`).first().click({ timeout: 5000 });
     await page.waitForTimeout(4000);
 
     const bodyText = await page.innerText('body');
