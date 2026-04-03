@@ -64,7 +64,6 @@ async function createSession(contextId) {
     browserSettings: {
       context: { id: contextId, persist: true },
       solveCaptchas: true,
-      advancedStealth: true,
     },
   };
   if (BB_PROJECT) body.projectId = BB_PROJECT;
