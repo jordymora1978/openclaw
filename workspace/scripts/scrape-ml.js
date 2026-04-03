@@ -27,7 +27,10 @@ async function supabasePost(table, data) {
       'apikey': SUPABASE_KEY,
       'Authorization': `Bearer ${SUPABASE_KEY}`,
       'Content-Type': 'application/json',
-      'Prefer': 'resolution=merge-duplicates'
+      'Prefer': 'return=minimal,resolution=merge-duplicates',
+      'on-conflict': table === 'ml_support_inquiries'
+        ? 'store_id,country,inquiry_number'
+        : 'store_id,country,scraped_date'
     },
     body: JSON.stringify(data)
   });
@@ -74,20 +77,19 @@ async function login(page) {
   return false;
 }
 
-async function switchCountry(page, country) {
+async function switchCountry(page, ctx, country) {
   console.log(`[COUNTRY] Switching to ${country}...`);
   const siteId = ML_SITE_IDS[country];
   try {
-    // Set cookies directly (same method ML uses internally)
-    await page.evaluate((sid) => {
-      document.cookie = `cbtSiteId=${sid}; path=/;`;
-    }, siteId);
-    // Reload to apply
-    await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
+    // Set cookies via Playwright context API (not page.evaluate)
+    await ctx.addCookies([
+      { name: 'cbtSiteId', value: siteId, domain: 'global-selling.mercadolibre.com', path: '/' }
+    ]);
+    await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await page.waitForTimeout(3000);
-    // Verify country switched by checking header text
-    const headerText = await page.locator('.nav-header-cbt__site-switcher-value').innerText().catch(() => '');
-    console.log(`[COUNTRY] Switched to ${country} (header shows: ${headerText})`);
+    const bodyText = await page.innerText('body');
+    const countryMatch = bodyText.match(/Country:\s*(\w+)/);
+    console.log(`[COUNTRY] Switched to ${country} (page shows: ${countryMatch ? countryMatch[1] : 'unknown'})`);
     return true;
   } catch (e) {
     console.error(`[COUNTRY] Failed to switch to ${country}:`, e.message);
@@ -318,7 +320,7 @@ async function main() {
     for (const country of COUNTRIES) {
       console.log(`\n--- ${country} ---`);
 
-      await switchCountry(page, country);
+      await switchCountry(page, ctx, country);
 
       const summary = await scrapeSummary(page, country);
       const inquiries = await scrapeInquiries(page, country);
