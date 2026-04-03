@@ -331,6 +331,7 @@ COPY --chown=node:node workspace/SOUL.md /home/node/.openclaw/workspace/SOUL.md
 COPY --chown=node:node workspace/USER.md /home/node/.openclaw/workspace/USER.md
 COPY --chown=node:node workspace/TOOLS.md /home/node/.openclaw/workspace/TOOLS.md
 COPY --chown=node:node workspace/HEARTBEAT.md /home/node/.openclaw/workspace/HEARTBEAT.md
+COPY --chown=node:node workspace/scripts/scrape-ml.js /home/node/.openclaw/workspace/scripts/scrape-ml.js
 COPY --chown=node:node skills/dropux/SKILL.md /home/node/.openclaw/skills/dropux/SKILL.md
 ENV OPENCLAW_CONFIG_PATH=/home/node/.openclaw/config.json
 HEALTHCHECK --interval=3m --timeout=10s --start-period=15s --retries=3 \
