@@ -264,6 +264,11 @@ RUN mkdir -p /home/node/.openclaw && \
   "tools": {
     "profile": "full"
   },
+  "skills": {
+    "entries": {
+      "dropux": { "enabled": true }
+    }
+  },
   "channels": {
     "telegram": {
       "enabled": true,
@@ -295,7 +300,8 @@ RUN cat > /home/node/.openclaw/exec-approvals.json <<'EAEOF'
   }
 }
 EAEOF
-COPY skills/dropux /app/skills/dropux
+RUN mkdir -p /home/node/.openclaw/skills/dropux
+COPY --chown=node:node skills/dropux/SKILL.md /home/node/.openclaw/skills/dropux/SKILL.md
 ENV OPENCLAW_CONFIG_PATH=/home/node/.openclaw/config.json
 HEALTHCHECK --interval=3m --timeout=10s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
