@@ -79,20 +79,19 @@ async function login(page) {
 
 async function switchCountry(page, ctx, country) {
   console.log(`[COUNTRY] Switching to ${country}...`);
+  const siteId = ML_SITE_IDS[country];
   try {
-    // Go to Summary page
     await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await page.waitForTimeout(2000);
 
-    // Click "Country: X" dropdown to open it
-    await page.locator('text=Country:').first().click({ timeout: 5000 });
+    // Click header site switcher trigger
+    await page.locator('.nav-header-cbt__site-switcher-trigger').click({ timeout: 5000 });
     await page.waitForTimeout(1000);
 
-    // Click the country name in the dropdown list
-    await page.getByText(country, { exact: true }).click({ timeout: 5000 });
-    await page.waitForTimeout(3000);
+    // Click option by data-value
+    await page.locator(`[data-value="${siteId}"]`).click({ timeout: 5000 });
+    await page.waitForTimeout(4000);
 
-    // Verify
     const bodyText = await page.innerText('body');
     const countryMatch = bodyText.match(/Country:\s*(\w+)/);
     console.log(`[COUNTRY] Switched to ${country} (page shows: ${countryMatch ? countryMatch[1] : 'unknown'})`);
