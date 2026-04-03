@@ -1,26 +1,80 @@
 /**
- * Dropux ML Scraper - Recolecta datos de MercadoLibre Global Selling
+ * Dropux ML Scraper - Recolecta datos de soporte y reputación de MercadoLibre
  *
- * Recorre 5 países, lee Summary + Help inquiries, guarda en Supabase.
- * Diseñado para ejecutarse via OpenClaw cron cada 4-8 horas.
+ * Usa Browserbase Contexts para mantener sesión de ML persistente.
+ * Primera corrida: crea contexto + login. Siguientes: reutiliza contexto (sin login).
+ *
+ * Recolecta SOLO:
+ * - Estado de cuenta y métricas de reputación por país
+ * - Inquiries de soporte con conversaciones
  *
  * Uso: PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright node /home/node/.openclaw/workspace/scripts/scrape-ml.js
  */
 
 const { chromium } = require('/app/node_modules/playwright-core');
+const fs = require('fs');
 
+// ─── Config ────────────────────────────────────────────
 const STORE_ID = 49;
 const COUNTRIES = ['Mexico', 'Brazil', 'Argentina', 'Chile', 'Colombia'];
-const COUNTRY_CODES = { 'Mexico': 'MX', 'Brazil': 'BR', 'Argentina': 'AR', 'Chile': 'CL', 'Colombia': 'CO' };
-const ML_SITE_IDS = { 'Mexico': 'MLM-remote', 'Brazil': 'MLB-remote', 'Argentina': 'MLA-remote', 'Chile': 'MLC-remote', 'Colombia': 'MCO-remote' };
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
-const BROWSERBASE_KEY = process.env.BROWSERBASE_API_KEY;
+const COUNTRY_CODES = { Mexico: 'MX', Brazil: 'BR', Argentina: 'AR', Chile: 'CL', Colombia: 'CO' };
+const ML_SITE_IDS = { Mexico: 'MLM-remote', Brazil: 'MLB-remote', Argentina: 'MLA-remote', Chile: 'MLC-remote', Colombia: 'MCO-remote' };
+
+const BB_API = 'https://api.browserbase.com/v1';
+const BB_KEY = process.env.BROWSERBASE_API_KEY;
+const BB_PROJECT = process.env.BROWSERBASE_PROJECT_ID;
 const ML_USER = process.env.ML_USER_49;
 const ML_PASS = process.env.ML_PASS_49;
-const TIMEOUT = 15000;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
+const CONTEXT_FILE = '/home/node/.openclaw/workspace/scripts/.bb-context-id';
 
-async function supabasePost(table, data) {
+// ─── Browserbase API ───────────────────────────────────
+async function bbFetch(path, method = 'GET', body = null) {
+  const opts = {
+    method,
+    headers: { 'X-BB-API-Key': BB_KEY, 'Content-Type': 'application/json' },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch(`${BB_API}${path}`, opts);
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`Browserbase ${method} ${path}: ${resp.status} ${err}`);
+  }
+  return resp.json();
+}
+
+async function getOrCreateContext() {
+  // Reusar contexto si existe
+  if (fs.existsSync(CONTEXT_FILE)) {
+    const id = fs.readFileSync(CONTEXT_FILE, 'utf8').trim();
+    console.log(`[BB] Reusing context: ${id}`);
+    return id;
+  }
+  // Crear nuevo
+  const body = BB_PROJECT ? { projectId: BB_PROJECT } : {};
+  const ctx = await bbFetch('/contexts', 'POST', body);
+  fs.writeFileSync(CONTEXT_FILE, ctx.id);
+  console.log(`[BB] Created new context: ${ctx.id}`);
+  return ctx.id;
+}
+
+async function createSession(contextId) {
+  const body = {
+    browserSettings: {
+      context: { id: contextId, persist: true },
+      solveCaptchas: true,
+      advancedStealth: true,
+    },
+  };
+  if (BB_PROJECT) body.projectId = BB_PROJECT;
+  const session = await bbFetch('/sessions', 'POST', body);
+  console.log(`[BB] Session created: ${session.id}`);
+  return session;
+}
+
+// ─── Supabase ──────────────────────────────────────────
+async function supabaseUpsert(table, data, conflictCols) {
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method: 'POST',
     headers: {
@@ -28,137 +82,15 @@ async function supabasePost(table, data) {
       'Authorization': `Bearer ${SUPABASE_KEY}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=minimal,resolution=merge-duplicates',
-      'on-conflict': table === 'ml_support_inquiries'
-        ? 'store_id,country,inquiry_number'
-        : 'store_id,country,scraped_date'
     },
-    body: JSON.stringify(data)
+    body: JSON.stringify(data),
   });
   if (!resp.ok) {
     const err = await resp.text();
-    console.error(`[DB] Error saving to ${table}:`, err);
-  }
-  return resp.ok;
-}
-
-async function login(page) {
-  console.log('[LOGIN] Navigating to ML...');
-  await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForTimeout(3000);
-
-  // Check if already logged in
-  const bodyText = await page.innerText('body');
-  if (bodyText.includes('Summary') && !bodyText.includes('Fill out your e-mail')) {
-    console.log('[LOGIN] Already logged in');
-    return true;
-  }
-
-  console.log('[LOGIN] Filling email...');
-  await page.fill('input[name=user_id]', ML_USER);
-  await page.click('button[type=submit]');
-  await page.waitForTimeout(5000);
-
-  console.log('[LOGIN] Selecting password...');
-  await page.locator('button[aria-labelledby*=password]').first().click();
-  await page.waitForTimeout(3000);
-
-  console.log('[LOGIN] Filling password...');
-  await page.fill('input[type=password]', ML_PASS);
-  await page.click('button[type=submit]');
-  await page.waitForTimeout(5000);
-
-  const afterLogin = await page.innerText('body');
-  if (afterLogin.includes('Summary') || afterLogin.includes('Add listings')) {
-    console.log('[LOGIN] Success');
-    return true;
-  }
-
-  console.error('[LOGIN] Failed - page content:', afterLogin.substring(0, 200));
-  return false;
-}
-
-async function switchCountry(page, ctx, country) {
-  console.log(`[COUNTRY] Switching to ${country}...`);
-  const siteId = ML_SITE_IDS[country];
-  try {
-    await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await page.waitForTimeout(2000);
-
-    // Click header site switcher trigger
-    await page.locator('.nav-header-cbt__site-switcher-trigger').click({ timeout: 5000 });
-    await page.waitForTimeout(1000);
-
-    // Click option by data-value
-    await page.locator(`[data-value="${siteId}"]`).click({ timeout: 5000 });
-    await page.waitForTimeout(4000);
-
-    const bodyText = await page.innerText('body');
-    const countryMatch = bodyText.match(/Country:\s*(\w+)/);
-    console.log(`[COUNTRY] Switched to ${country} (page shows: ${countryMatch ? countryMatch[1] : 'unknown'})`);
-    return true;
-  } catch (e) {
-    console.error(`[COUNTRY] Failed to switch to ${country}:`, e.message);
+    console.error(`[DB] Error in ${table}: ${err}`);
     return false;
   }
-}
-
-async function scrapeSummary(page, country) {
-  console.log(`[SUMMARY] Reading ${country}...`);
-  try {
-    await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
-    await page.waitForTimeout(3000);
-
-    const text = await page.innerText('body');
-
-    // Extract account status from orange banner
-    let accountStatus = 'active';
-    let statusReason = '';
-    if (text.includes('permanently suspended') || text.includes('permanently disable')) {
-      accountStatus = 'suspended';
-      const match = text.match(/We (permanently suspended|identified|have repeatedly).*?\./s);
-      statusReason = match ? match[0] : 'permanently suspended';
-    } else if (text.includes('disabled') || text.includes('will no longer be able to sell')) {
-      accountStatus = 'disabled';
-      const match = text.match(/Your account is disabled.*?\./s);
-      statusReason = match ? match[0] : 'account disabled';
-    }
-
-    // Extract reputation
-    let reputation = '';
-    const repMatch = text.match(/(Green|Yellow|Orange|Red)\s*[✅🟢🟡🟠🔴]?/);
-    if (repMatch) reputation = repMatch[1];
-
-    // Extract gross sales
-    let grossSales = '';
-    const salesMatch = text.match(/US\$\s*[\d,]+/);
-    if (salesMatch) grossSales = salesMatch[0];
-
-    // Extract pending tasks
-    let pendingQuestions = 0;
-    let pendingShipments = 0;
-    const qMatch = text.match(/(\d+)\s*to be answered/);
-    if (qMatch) pendingQuestions = parseInt(qMatch[1]);
-    const sMatch = text.match(/(\d+)\s*to be shipped/);
-    if (sMatch) pendingShipments = parseInt(sMatch[1]);
-
-    const data = {
-      store_id: STORE_ID,
-      country: COUNTRY_CODES[country],
-      account_status: accountStatus,
-      status_reason: statusReason,
-      reputation: reputation,
-      gross_sales: grossSales,
-      pending_questions: pendingQuestions,
-      pending_shipments: pendingShipments,
-    };
-
-    console.log(`[SUMMARY] ${country}: status=${accountStatus}, rep=${reputation}, sales=${grossSales}, Q=${pendingQuestions}, S=${pendingShipments}`);
-    await supabasePost('ml_account_health', data);
-    return data;
-  } catch (e) {
-    console.error(`[SUMMARY] Error reading ${country}:`, e.message);
-    return null;
-  }
+  return true;
 }
 
 async function getExistingInquiries(country) {
@@ -176,181 +108,315 @@ async function getExistingInquiries(country) {
   }
 }
 
+// ─── Login ─────────────────────────────────────────────
+async function loginIfNeeded(page) {
+  await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
+  await page.waitForTimeout(3000);
+
+  const text = await page.innerText('body');
+  if (text.includes('Summary') || text.includes('Add listings')) {
+    console.log('[LOGIN] Already logged in (context has session)');
+    return true;
+  }
+
+  if (!text.includes('Fill out your e-mail') && !text.includes('log in')) {
+    console.log('[LOGIN] Unknown page state, trying to continue...');
+    return true;
+  }
+
+  console.log('[LOGIN] Need to login...');
+  await page.fill('input[name=user_id]', ML_USER);
+  await page.click('button[type=submit]');
+  await page.waitForTimeout(5000);
+
+  // Verificar si pide método de verificación
+  const afterEmail = await page.innerText('body');
+  if (afterEmail.includes('Password') || afterEmail.includes('verification')) {
+    await page.locator('button[aria-labelledby*=password]').first().click({ timeout: 10000 });
+    await page.waitForTimeout(3000);
+    await page.fill('input[type=password]', ML_PASS);
+    await page.click('button[type=submit]');
+    await page.waitForTimeout(5000);
+  }
+
+  const afterLogin = await page.innerText('body');
+  if (afterLogin.includes('Summary') || afterLogin.includes('Add listings')) {
+    console.log('[LOGIN] Success');
+    return true;
+  }
+
+  console.error('[LOGIN] Failed:', afterLogin.substring(0, 200));
+  return false;
+}
+
+// ─── Cambio de País ────────────────────────────────────
+async function switchCountry(page, country) {
+  console.log(`[COUNTRY] Switching to ${country}...`);
+  try {
+    // Click header site switcher
+    await page.locator('.nav-header-cbt__site-switcher-trigger').click({ timeout: 5000 });
+    await page.waitForTimeout(1000);
+    // Click option by data-value
+    await page.locator(`[data-value="${ML_SITE_IDS[country]}"]`).click({ timeout: 5000 });
+    await page.waitForTimeout(4000);
+
+    const bodyText = await page.innerText('body');
+    const match = bodyText.match(/Country:\s*(\w+)/);
+    console.log(`[COUNTRY] Now on: ${match ? match[1] : 'unknown'}`);
+    return true;
+  } catch (e) {
+    console.error(`[COUNTRY] Failed: ${e.message}`);
+    return false;
+  }
+}
+
+// ─── Scrape Summary (reputación + estado) ──────────────
+async function scrapeSummary(page, country) {
+  console.log(`[SUMMARY] Reading ${country}...`);
+  try {
+    const text = await page.innerText('body');
+
+    // Estado de cuenta
+    let accountStatus = 'active';
+    let statusReason = '';
+    if (text.includes('permanently suspended') || text.includes('permanently disable')) {
+      accountStatus = 'suspended';
+      const m = text.match(/(We permanently suspended.*?\.)/s) || text.match(/(Your listings have repeatedly.*?\.)/s);
+      statusReason = m ? m[1] : 'suspended';
+    } else if (text.includes('disabled') || text.includes('will no longer be able to sell')) {
+      accountStatus = 'disabled';
+      const m = text.match(/(Your account is disabled.*?\.)/s);
+      statusReason = m ? m[1] : 'disabled';
+    }
+
+    // Reputación
+    let reputation = '';
+    const repMatch = text.match(/(Green|Yellow|Orange|Red)/);
+    if (repMatch) reputation = repMatch[1];
+
+    // Ventas
+    let grossSales = '';
+    const salesMatch = text.match(/US\$\s*[\d,]+/);
+    if (salesMatch) grossSales = salesMatch[0];
+
+    // Métricas de reputación (si están visibles en Summary)
+    let complaints = '', mediations = '', cancelled = '', delayed = '';
+    const compMatch = text.match(/Complaints[\s\S]*?([\d.]+%)/);
+    if (compMatch) complaints = compMatch[1];
+    const medMatch = text.match(/Mediations[\s\S]*?([\d.]+%)/);
+    if (medMatch) mediations = medMatch[1];
+    const canMatch = text.match(/Canceled by you[\s\S]*?([\d.]+%)/);
+    if (canMatch) cancelled = canMatch[1];
+    const delMatch = text.match(/Delayed handling[\s\S]*?([\d.]+%)/);
+    if (delMatch) delayed = delMatch[1];
+
+    const data = {
+      store_id: STORE_ID,
+      country: COUNTRY_CODES[country],
+      account_status: accountStatus,
+      status_reason: statusReason,
+      reputation,
+      gross_sales: grossSales,
+    };
+
+    console.log(`[SUMMARY] ${country}: ${accountStatus} | rep=${reputation} | sales=${grossSales}`);
+    if (complaints) console.log(`[SUMMARY] Complaints=${complaints} Med=${mediations} Cancel=${cancelled} Delayed=${delayed}`);
+
+    await supabaseUpsert('ml_account_health', data);
+    return data;
+  } catch (e) {
+    console.error(`[SUMMARY] Error: ${e.message}`);
+    return null;
+  }
+}
+
+// ─── Scrape Inquiries ──────────────────────────────────
 async function scrapeInquiries(page, country) {
   console.log(`[INQUIRIES] Reading ${country}...`);
   const existing = await getExistingInquiries(country);
-  console.log(`[INQUIRIES] Already in DB: ${Object.keys(existing).length} inquiries`);
+  console.log(`[INQUIRIES] Already in DB: ${Object.keys(existing).length}`);
 
   try {
-    await page.goto('https://global-selling.mercadolibre.com/help', { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
+    await page.goto('https://global-selling.mercadolibre.com/help', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await page.waitForTimeout(3000);
 
-    // Click "Show all" if present
+    // Show all
     try {
       await page.getByText('Show all').click({ timeout: 5000 });
       await page.waitForTimeout(3000);
-    } catch (e) {
-      // No "Show all" button, might be on the full list already
-    }
+    } catch (e) {}
 
-    const text = await page.innerText('body');
+    // Contar inquiries
+    const links = await page.locator('a, button').filter({ hasText: /Go to the inquir/ }).all();
+    console.log(`[INQUIRIES] Found ${links.length} on page`);
 
-    // Find all inquiry links
-    const inquiryLinks = await page.locator('a, button').filter({ hasText: /Go to the inquir/ }).all();
-    console.log(`[INQUIRIES] Found ${inquiryLinks.length} inquiries in ${country}`);
-
-    const inquiries = [];
-    for (let i = 0; i < inquiryLinks.length; i++) {
+    const saved = [];
+    for (let i = 0; i < links.length; i++) {
       try {
-        // Re-navigate to help page (links might be stale after navigation)
-        await page.goto('https://global-selling.mercadolibre.com/help', { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
+        // Re-navegar para evitar stale elements
+        await page.goto('https://global-selling.mercadolibre.com/help', { waitUntil: 'domcontentloaded', timeout: 20000 });
         await page.waitForTimeout(2000);
+        try { await page.getByText('Show all').click({ timeout: 3000 }); await page.waitForTimeout(2000); } catch (e) {}
 
-        try {
-          await page.getByText('Show all').click({ timeout: 3000 });
-          await page.waitForTimeout(2000);
-        } catch (e) {}
+        const currentLinks = await page.locator('a, button').filter({ hasText: /Go to the inquir/ }).all();
+        if (i >= currentLinks.length) break;
 
-        // Click the i-th inquiry
-        const links = await page.locator('a, button').filter({ hasText: /Go to the inquir/ }).all();
-        if (i >= links.length) break;
-
-        await links[i].click();
+        await currentLinks[i].click();
         await page.waitForTimeout(3000);
 
-        const queryText = await page.innerText('body');
+        const qText = await page.innerText('body');
 
-        // Extract inquiry number
+        // Número de inquiry
         let inquiryNumber = '';
-        const numMatch = queryText.match(/Number\s*(\d+)/);
+        const numMatch = qText.match(/Number\s*\n?\s*(\d+)/);
         if (numMatch) inquiryNumber = numMatch[1];
 
-        // Extract date
+        if (!inquiryNumber) {
+          console.log(`[INQUIRIES] No number found for inquiry ${i + 1}, skipping`);
+          continue;
+        }
+
+        // Skip si ya completado en DB
+        if (existing[inquiryNumber] === 'completed') {
+          console.log(`[INQUIRIES] Skip ${inquiryNumber} (completed)`);
+          continue;
+        }
+
+        // Fecha
         let inquiryDate = '';
-        const dateMatch = queryText.match(/Creation date\s*on\s*(.+?\d{4})/);
-        if (dateMatch) inquiryDate = dateMatch[1];
+        const dateMatch = qText.match(/Creation date\s*\n?\s*on\s*(.+?\d{4})/);
+        if (dateMatch) inquiryDate = dateMatch[1].trim();
 
-        // Extract status
+        // Status
         let inquiryStatus = 'open';
-        if (queryText.includes('It ended') || queryText.includes('Completed')) {
-          inquiryStatus = 'completed';
-        }
+        if (qText.includes('It ended') || qText.includes('Completed')) inquiryStatus = 'completed';
 
-        // Extract summary
+        // Resumen (del AI)
         let summaryText = '';
-        const summaryMatch = queryText.match(/(?:It ended|Completed).*?\n(.+?)(?:\n|Review|Details)/s);
-        if (summaryMatch) summaryText = summaryMatch[1].trim();
-        if (!summaryText) {
-          // Fallback: get text between status and "Review the conversation"
-          const fallback = queryText.match(/(?:artificial intelligence)\s*(.+?)(?:Review the conversation|Details)/s);
-          if (fallback) summaryText = fallback[1].trim();
-        }
+        const sumMatch = qText.match(/(?:Summarized by artificial intelligence)\s*\n?\s*(.*?)(?:\n|Review the conversation|Details)/s);
+        if (sumMatch) summaryText = sumMatch[1].trim();
 
-        // Try to read conversation
+        // Leer conversación
         let conversationText = '';
         try {
           const reviewBtn = page.locator('a, button').filter({ hasText: 'Review the conversation' });
           if (await reviewBtn.count() > 0) {
             await reviewBtn.first().click();
-            await page.waitForTimeout(3000);
-            conversationText = await page.innerText('body');
-            // Clean up navigation elements
-            conversationText = conversationText.replace(/Mercado Libre International Selling.*?Conversation\s*/s, '');
-            conversationText = conversationText.replace(/Investor relations.*$/s, '');
-            conversationText = conversationText.substring(0, 5000); // Limit size
+            await page.waitForTimeout(4000);
+            const convPage = await page.innerText('body');
+            // Limpiar header/footer
+            conversationText = convPage
+              .replace(/^[\s\S]*?Conversation\s*/m, '')
+              .replace(/Investor relations[\s\S]*$/, '')
+              .substring(0, 8000);
           }
         } catch (e) {
-          console.log(`[INQUIRIES] Could not read conversation for inquiry ${i + 1}`);
+          console.log(`[INQUIRIES] Could not read conversation for ${inquiryNumber}`);
         }
 
-        if (inquiryNumber) {
-          // Skip if already in DB and completed (no changes expected)
-          if (existing[inquiryNumber] === 'completed' && inquiryStatus === 'completed') {
-            console.log(`[INQUIRIES] Skipping ${inquiryNumber} (already completed in DB)`);
-            continue;
-          }
+        await supabaseUpsert('ml_support_inquiries', {
+          store_id: STORE_ID,
+          country: COUNTRY_CODES[country],
+          inquiry_number: inquiryNumber,
+          inquiry_date: inquiryDate || null,
+          inquiry_status: inquiryStatus,
+          summary_text: summaryText,
+          conversation_text: conversationText,
+        });
 
-          const data = {
-            store_id: STORE_ID,
-            country: COUNTRY_CODES[country],
-            inquiry_number: inquiryNumber,
-            inquiry_date: inquiryDate || null,
-            inquiry_status: inquiryStatus,
-            summary_text: summaryText,
-            conversation_text: conversationText,
-          };
+        saved.push(inquiryNumber);
+        console.log(`[INQUIRIES] Saved ${inquiryNumber} (${inquiryStatus}) [${existing[inquiryNumber] ? 'updated' : 'new'}]`);
 
-          await supabasePost('ml_support_inquiries', data);
-          inquiries.push(data);
-          console.log(`[INQUIRIES] Saved inquiry ${inquiryNumber} (${inquiryStatus}) [${existing[inquiryNumber] ? 'updated' : 'new'}]`);
-        }
       } catch (e) {
-        console.error(`[INQUIRIES] Error reading inquiry ${i + 1}:`, e.message);
+        console.error(`[INQUIRIES] Error on inquiry ${i + 1}: ${e.message}`);
       }
     }
 
-    return inquiries;
+    return saved;
   } catch (e) {
-    console.error(`[INQUIRIES] Error in ${country}:`, e.message);
+    console.error(`[INQUIRIES] Error: ${e.message}`);
     return [];
   }
 }
 
+// ─── Main ──────────────────────────────────────────────
 async function main() {
   console.log('=== Dropux ML Scraper ===');
   console.log(`Time: ${new Date().toISOString()}`);
   console.log(`Store: ${STORE_ID}`);
 
-  if (!BROWSERBASE_KEY || !ML_USER || !ML_PASS || !SUPABASE_URL) {
-    console.error('Missing required environment variables');
+  // Validar variables
+  const missing = [];
+  if (!BB_KEY) missing.push('BROWSERBASE_API_KEY');
+  if (!ML_USER) missing.push('ML_USER_49');
+  if (!ML_PASS) missing.push('ML_PASS_49');
+  if (!SUPABASE_URL) missing.push('SUPABASE_URL');
+  if (!SUPABASE_KEY) missing.push('SUPABASE_ANON_KEY');
+  if (missing.length) {
+    console.error(`Missing env vars: ${missing.join(', ')}`);
     process.exit(1);
   }
 
   let browser;
   try {
-    browser = await chromium.connectOverCDP(`wss://connect.browserbase.com?apiKey=${BROWSERBASE_KEY}`);
+    // Obtener o crear contexto persistente
+    const contextId = await getOrCreateContext();
+    const session = await createSession(contextId);
+
+    // Conectar Playwright
+    browser = await chromium.connectOverCDP(session.connectUrl);
     const ctx = browser.contexts()[0];
     const page = ctx.pages()[0] || await ctx.newPage();
 
-    // Login
-    const loggedIn = await login(page);
+    // Login (solo si el contexto no tiene sesión)
+    const loggedIn = await loginIfNeeded(page);
     if (!loggedIn) {
-      console.error('Login failed, aborting');
+      console.error('[FATAL] Login failed');
       await browser.close();
       process.exit(1);
     }
 
-    // Scrape each country
+    // Recorrer países
     const results = {};
-    for (const country of COUNTRIES) {
-      console.log(`\n--- ${country} ---`);
+    for (let c = 0; c < COUNTRIES.length; c++) {
+      const country = COUNTRIES[c];
+      console.log(`\n--- ${country} (${c + 1}/${COUNTRIES.length}) ---`);
 
-      await switchCountry(page, ctx, country);
+      // Primer país no necesita switch (ya está en el default)
+      if (c > 0) {
+        const switched = await switchCountry(page, country);
+        if (!switched) {
+          console.error(`[SKIP] Could not switch to ${country}`);
+          results[country] = { error: 'switch failed' };
+          continue;
+        }
+      } else {
+        // Para el primer país, navegar a Summary
+        await page.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page.waitForTimeout(3000);
+      }
 
       const summary = await scrapeSummary(page, country);
       const inquiries = await scrapeInquiries(page, country);
 
-      results[country] = {
-        summary,
-        inquiries_count: inquiries.length,
-      };
+      results[country] = { summary, inquiries_saved: inquiries.length };
     }
 
-    // Print final summary
+    // Resumen final
     console.log('\n=== RESULTS ===');
     for (const [country, data] of Object.entries(results)) {
-      const s = data.summary;
-      if (s) {
-        console.log(`${country}: ${s.account_status} | Rep: ${s.reputation} | Sales: ${s.gross_sales} | Inquiries: ${data.inquiries_count}`);
+      if (data.error) {
+        console.log(`${country}: ERROR - ${data.error}`);
       } else {
-        console.log(`${country}: ERROR reading summary`);
+        const s = data.summary;
+        console.log(`${country}: ${s?.account_status || '?'} | rep=${s?.reputation || '?'} | inquiries=${data.inquiries_saved}`);
       }
     }
 
     await browser.close();
     console.log('\n=== DONE ===');
   } catch (e) {
-    console.error('Fatal error:', e.message);
+    console.error(`[FATAL] ${e.message}`);
     if (browser) await browser.close().catch(() => {});
     process.exit(1);
   }
