@@ -15,7 +15,8 @@ mkdir -p "$DEST/workspace/scripts" \
          "$DEST/workspace/memory/casos" \
          "$DEST/workspace/memory/patrones" \
          "$DEST/workspace/memory/metricas" \
-         "$DEST/skills/dropux"
+         "$DEST/skills/dropux" \
+         "$DEST/skills/anti-suspension"
 
 # Config files: copy only if not present (preserve manual edits)
 for f in config.json exec-approvals.json; do
@@ -38,6 +39,7 @@ cp /home/node/.openclaw/workspace/scripts/*.js "$DEST/workspace/scripts/"
 # Skills: always sync from image
 echo "[entrypoint] Syncing skills"
 cp /home/node/.openclaw/skills/dropux/SKILL.md "$DEST/skills/dropux/"
+cp /home/node/.openclaw/skills/anti-suspension/SKILL.md "$DEST/skills/anti-suspension/"
 
 # Memory files in volume are NEVER overwritten (agent writes to these at runtime)
 # The mkdir -p above ensures the dirs exist, but content is preserved.

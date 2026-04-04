@@ -265,6 +265,8 @@ COPY --chown=node:node workspace/scripts/*.js /home/node/.openclaw/workspace/scr
 COPY --chown=node:node workspace/scripts/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 COPY --chown=node:node skills/dropux/SKILL.md /home/node/.openclaw/skills/dropux/SKILL.md
+RUN mkdir -p /home/node/.openclaw/skills/anti-suspension
+COPY --chown=node:node skills/anti-suspension/SKILL.md /home/node/.openclaw/skills/anti-suspension/SKILL.md
 
 # Entrypoint runs as root to fix volume permissions, then drops to node
 USER root

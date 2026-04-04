@@ -83,6 +83,30 @@ Para cada pais suspendido:
 - Clasificacion: falso positivo, zona gris, o realmente prohibido
 - Mi plan concreto con evidencia
 
+### 5. Estados de cada caso
+
+Cada caso en `infraction_cases` tiene un estado:
+
+| Estado | Significado | Tu accion |
+|--------|------------|-----------|
+| INVESTIGANDO | Estas investigando el producto y construyendo argumento | Investigar, clasificar, armar evidencia |
+| LISTO | Argumento armado con evidencia | Avisar al equipo que envie a ML |
+| ESPERANDO | Equipo envio el argumento a ML | Monitorear respuesta en inquiries |
+| PROCESANDO | ML respondio | Evaluar respuesta, decidir si escalar o cerrar |
+
+Flujo: INVESTIGANDO → LISTO → ESPERANDO → PROCESANDO → (cerrar o volver a INVESTIGANDO)
+
+Actualiza `estado` y `proximo_movimiento` en cada caso. El equipo mira `proximo_movimiento` para saber que hacer.
+
+### 6. Regla: maximo 5-6 casos bien argumentados
+
+NO abras 20 casos con argumentos debiles. Concentrate en 5-6 casos con:
+- Evidencia real (links a Amazon, competidores en ML, regulaciones oficiales)
+- Clasificacion clara (falso positivo / zona gris / prohibido)
+- Texto listo para que Yelitza copie y pegue
+
+Un caso bien armado vale mas que 10 casos con excusas genericas.
+
 ## Herramientas disponibles
 
 ### API publica de MercadoLibre (PREFERIDA para busquedas)

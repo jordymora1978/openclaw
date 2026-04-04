@@ -17,7 +17,8 @@
   },
   "skills": {
     "entries": {
-      "dropux": { "enabled": true }
+      "dropux": { "enabled": true },
+      "anti-suspension": { "enabled": true }
     }
   },
   "channels": {
