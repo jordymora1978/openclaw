@@ -7,6 +7,7 @@ const { chromium } = require('/app/node_modules/playwright-core');
 const STORE_ID = 49;
 const COUNTRY_CODES = { Mexico: 'MX', Brazil: 'BR', Argentina: 'AR', Chile: 'CL', Colombia: 'CO' };
 const BB_KEY = process.env.BROWSERBASE_API_KEY;
+const BB_PROJECT = process.env.BROWSERBASE_PROJECT_ID;
 const ML_USER = process.env.ML_USER_49;
 const ML_PASS = process.env.ML_PASS_49;
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -32,9 +33,29 @@ async function supabaseUpsert(table, data) {
 (async () => {
   console.log(`=== Scrape ${COUNTRY} (Store ${STORE_ID}) ===`);
 
-  const b = await chromium.connectOverCDP('wss://connect.browserbase.com?apiKey=' + BB_KEY);
+  // Create Browserbase session with captcha solving + proxy
+  console.log('[SESSION] Creating with solveCaptchas + proxies...');
+  const sessResp = await fetch('https://api.browserbase.com/v1/sessions', {
+    method: 'POST',
+    headers: { 'x-bb-api-key': BB_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      projectId: BB_PROJECT,
+      browserSettings: { solveCaptchas: true },
+      proxies: true,
+    }),
+  });
+  const sess = await sessResp.json();
+  if (!sess.connectUrl) { console.error('[SESSION] Failed:', JSON.stringify(sess)); process.exit(1); }
+  console.log(`[SESSION] ${sess.id}`);
+
+  const b = await chromium.connectOverCDP(sess.connectUrl);
   const ctx = b.contexts()[0];
   const p = ctx.pages()[0] || await ctx.newPage();
+
+  // Listen for captcha events
+  p.on('console', msg => {
+    if (msg.text().includes('browserbase-solving')) console.log('[CAPTCHA]', msg.text());
+  });
 
   // Login
   console.log('[LOGIN]...');
@@ -42,8 +63,9 @@ async function supabaseUpsert(table, data) {
   await p.waitForTimeout(3000);
   await p.fill('input[name=user_id]', ML_USER);
   await p.click('button[type=submit]');
-  await p.waitForTimeout(5000);
-  await p.locator('button[aria-labelledby*=password]').first().click();
+  console.log('[LOGIN] Email submitted, waiting for captcha...');
+  await p.waitForTimeout(35000);
+  await p.locator('button[aria-labelledby*=password]').first().click({ timeout: 10000 });
   await p.waitForTimeout(3000);
   await p.fill('input[type=password]', ML_PASS);
   await p.click('button[type=submit]');
@@ -51,7 +73,7 @@ async function supabaseUpsert(table, data) {
 
   const loginText = await p.innerText('body');
   if (!loginText.includes('Summary') && !loginText.includes('Add listings')) {
-    console.error('[LOGIN] Failed');
+    console.error('[LOGIN] Failed — page:', loginText.substring(0, 300));
     await b.close();
     process.exit(1);
   }
