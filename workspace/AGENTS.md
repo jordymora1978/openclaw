@@ -115,11 +115,34 @@ curl -s "$SUPABASE_CATALOG_URL/rest/v1/ml_publications?select=ml_item_id,asin,ti
 
 Con el ASIN, ver el producto en Amazon: https://www.amazon.com/dp/[ASIN]
 
-### Browser (Browserbase)
-SOLO para cosas que no se pueden hacer con API:
-- Leer el panel de soporte de ML (inquiries, conversaciones)
-- Leer regulaciones en sitios oficiales (INVIMA, ANVISA)
-- Ver paginas que bloquean acceso por API
+### Browser LOCAL (Playwright sin Browserbase)
+Para navegar cualquier pagina publica: ML, Amazon, INVIMA, Google, etc.
+NO necesita Browserbase. NO necesita login. Usa el Chromium local.
+
+```bash
+PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright node -e "
+const {chromium} = require('/app/node_modules/playwright-core');
+(async()=>{
+  const b = await chromium.launch({headless:true, args:['--no-sandbox','--disable-dev-shm-usage']});
+  const p = await b.newPage();
+  await p.goto('URL_AQUI', {waitUntil:'domcontentloaded',timeout:15000});
+  await p.waitForTimeout(2000);
+  const text = await p.innerText('body');
+  console.log(text.substring(0,3000));
+  await b.close();
+})()
+" 2>&1
+```
+
+Usar para:
+- Buscar productos en ML publico (mercadolibre.com.co, mercadolibre.com.br, etc)
+- Ver productos en Amazon (amazon.com/dp/ASIN)
+- Leer regulaciones (invima.gov.co, anvisa.gov.br)
+- Buscar informacion en Google
+
+### Browser BROWSERBASE (solo para login en ML Global Selling)
+SOLO cuando necesitas entrar al panel de soporte que requiere login.
+Usa la conexion directa: wss://connect.browserbase.com?apiKey=$BROWSERBASE_API_KEY
 
 ### Supabase
 ```bash
