@@ -14,8 +14,15 @@ const COUNTRY_CODES = { Mexico: 'MX', Brazil: 'BR', Argentina: 'AR', Chile: 'CL'
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
 
+const UPSERT_KEYS = {
+  ml_support_inquiries: 'store_id,inquiry_number',
+  ml_account_health: 'store_id,country,scraped_date',
+};
+
 async function supabaseUpsert(table, data) {
-  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+  const onConflict = UPSERT_KEYS[table] || '';
+  const qs = onConflict ? `?on_conflict=${onConflict}` : '';
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}${qs}`, {
     method: 'POST',
     headers: {
       'apikey': SUPABASE_KEY,
