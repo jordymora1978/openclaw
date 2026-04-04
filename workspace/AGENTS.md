@@ -153,15 +153,25 @@ curl -s "$SUPABASE_URL/rest/v1/TABLA?select=COLUMNAS&FILTROS" \
 
 Tablas: ml_support_inquiries, ml_account_health, infraction_cases
 
-### Script de recoleccion
+### Script de recoleccion (todos los paises, 1 sesion)
 ```bash
-PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright node /home/node/.openclaw/workspace/scripts/scrape-country.js [Pais] 2>&1
+PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright node /data/.openclaw/workspace/scripts/scrape-all.js 2>&1
+```
+
+### Script de recoleccion (1 pais)
+```bash
+PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright node /data/.openclaw/workspace/scripts/scrape-country.js [Pais] 2>&1
 ```
 
 ### Script de analisis
 ```bash
-node /home/node/.openclaw/workspace/scripts/analyze-country.js [Pais] 2>&1
+node /data/.openclaw/workspace/scripts/analyze-country.js [Pais] 2>&1
 ```
+
+### Si el login expiro (cookies invalidas)
+El scraper dira "[AUTH] Not logged in". Alerta al equipo por Telegram:
+"Login de ML expiro. Ejecutar setup-context.js para renovar cookies."
+NO intentes hacer login automatico — requiere captcha manual.
 
 ## Memoria
 

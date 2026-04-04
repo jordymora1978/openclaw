@@ -1,19 +1,18 @@
 /**
- * Scraper para UN SOLO país de ML
- * Uso: PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright node /home/node/.openclaw/workspace/scripts/scrape-country.js Colombia 2>&1
+ * Scraper para UN SOLO país de ML Global Selling
+ *
+ * Standalone:
+ *   PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright \
+ *   node /data/.openclaw/workspace/scripts/scrape-country.js Chile 2>&1
+ *
+ * Requires BB_CONTEXT_49 env var (created by setup-context.js).
+ * Also usable as module: require('./scrape-country.js').scrapeCountry(page, 'Chile', 49)
  */
 const { chromium } = require('/app/node_modules/playwright-core');
 
-const STORE_ID = 49;
 const COUNTRY_CODES = { Mexico: 'MX', Brazil: 'BR', Argentina: 'AR', Chile: 'CL', Colombia: 'CO' };
-const BB_KEY = process.env.BROWSERBASE_API_KEY;
-const BB_PROJECT = process.env.BROWSERBASE_PROJECT_ID;
-const ML_USER = process.env.ML_USER_49;
-const ML_PASS = process.env.ML_PASS_49;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
-
-const COUNTRY = process.argv[2] || 'Colombia';
 
 async function supabaseUpsert(table, data) {
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
@@ -30,67 +29,30 @@ async function supabaseUpsert(table, data) {
   return resp.ok;
 }
 
-(async () => {
-  console.log(`=== Scrape ${COUNTRY} (Store ${STORE_ID}) ===`);
+/**
+ * Scrape a single country. Expects page already logged in to ML Global Selling.
+ * @param {import('playwright-core').Page} p - Playwright page (already authenticated)
+ * @param {string} country - Country name: Mexico, Brazil, Argentina, Chile, Colombia
+ * @param {number} storeId - Store ID (49 or 51)
+ */
+async function scrapeCountry(p, country, storeId) {
+  const code = COUNTRY_CODES[country];
+  if (!code) throw new Error(`Unknown country: ${country}`);
 
-  // Create Browserbase session with captcha solving + proxy
-  console.log('[SESSION] Creating with solveCaptchas + proxies...');
-  const sessResp = await fetch('https://api.browserbase.com/v1/sessions', {
-    method: 'POST',
-    headers: { 'x-bb-api-key': BB_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      projectId: BB_PROJECT,
-      browserSettings: { solveCaptchas: true },
-      proxies: true,
-    }),
-  });
-  const sess = await sessResp.json();
-  if (!sess.connectUrl) { console.error('[SESSION] Failed:', JSON.stringify(sess)); process.exit(1); }
-  console.log(`[SESSION] ${sess.id}`);
+  console.log(`\n=== Scrape ${country} (Store ${storeId}) ===`);
 
-  const b = await chromium.connectOverCDP(sess.connectUrl);
-  const ctx = b.contexts()[0];
-  const p = ctx.pages()[0] || await ctx.newPage();
-
-  // Listen for captcha events
-  p.on('console', msg => {
-    if (msg.text().includes('browserbase-solving')) console.log('[CAPTCHA]', msg.text());
-  });
-
-  // Login
-  console.log('[LOGIN]...');
-  await p.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await p.waitForTimeout(3000);
-  await p.fill('input[name=user_id]', ML_USER);
-  await p.click('button[type=submit]');
-  console.log('[LOGIN] Email submitted, waiting for captcha...');
-  await p.waitForTimeout(35000);
-  await p.locator('button[aria-labelledby*=password]').first().click({ timeout: 10000 });
-  await p.waitForTimeout(3000);
-  await p.fill('input[type=password]', ML_PASS);
-  await p.click('button[type=submit]');
-  await p.waitForTimeout(5000);
-
-  const loginText = await p.innerText('body');
-  if (!loginText.includes('Summary') && !loginText.includes('Add listings')) {
-    console.error('[LOGIN] Failed — page:', loginText.substring(0, 300));
-    await b.close();
-    process.exit(1);
-  }
-  console.log('[LOGIN] OK');
-
-  // Cambiar a país desde /help/v2
-  console.log(`[SWITCH] ${COUNTRY}...`);
+  // Switch country via /help/v2
+  console.log(`[SWITCH] ${country}...`);
   await p.goto('https://global-selling.mercadolibre.com/help/v2', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await p.waitForTimeout(3000);
   await p.locator('.nav-header-cbt__site-switcher-trigger').first().click({ timeout: 8000 });
   await p.waitForTimeout(2000);
-  await p.getByText(COUNTRY, { exact: true }).first().click({ timeout: 8000 });
+  await p.getByText(country, { exact: true }).first().click({ timeout: 8000 });
   await p.waitForTimeout(4000);
   const headerVal = await p.locator('.nav-header-cbt__site-switcher-value').first().innerText().catch(() => '?');
   console.log(`[SWITCH] Header: ${headerVal}`);
 
-  // Leer Summary
+  // Read Summary
   console.log('[SUMMARY]...');
   await p.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await p.waitForTimeout(3000);
@@ -107,29 +69,28 @@ async function supabaseUpsert(table, data) {
     const m = summaryText.match(/(We.*?suspended.*?\.)/s);
     statusReason = m ? m[1] : 'suspended';
   }
-  console.log(`[SUMMARY] ${COUNTRY}: ${accountStatus} — ${statusReason || 'sin problemas'}`);
+  console.log(`[SUMMARY] ${country}: ${accountStatus} — ${statusReason || 'sin problemas'}`);
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
   await supabaseUpsert('ml_account_health', {
-    store_id: STORE_ID,
-    country: COUNTRY_CODES[COUNTRY],
+    store_id: storeId,
+    country: code,
     account_status: accountStatus,
     status_reason: statusReason,
     scraped_date: today,
   });
 
-  // Ir a Help y leer TODOS los inquiries
+  // Read inquiries
   console.log('[INQUIRIES]...');
   await p.goto('https://global-selling.mercadolibre.com/help/v2', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await p.waitForTimeout(3000);
 
-  // Show all
   try {
     await p.getByText('Show all').click({ timeout: 5000 });
     await p.waitForTimeout(3000);
   } catch (e) {}
 
-  // Recolectar todos los hrefs ANTES de iterar (evita re-navegacion a /help/v2)
+  // Collect all hrefs upfront (avoids re-navigation between inquiries)
   const hrefs = await p.locator('a').filter({ hasText: /Go to the inquir|Go to chat/ })
     .evaluateAll(els => els.map(el => el.href).filter(Boolean));
   console.log(`[INQUIRIES] Found ${hrefs.length} inquiry links`);
@@ -141,7 +102,6 @@ async function supabaseUpsert(table, data) {
 
       const qText = await p.innerText('body');
 
-      // Numero
       let inquiryNumber = '';
       const numMatch = qText.match(/Number\s*\n?\s*(\d+)/);
       if (numMatch) inquiryNumber = numMatch[1];
@@ -150,21 +110,17 @@ async function supabaseUpsert(table, data) {
         continue;
       }
 
-      // Fecha
       let inquiryDate = '';
       const dateMatch = qText.match(/Creation date\s*\n?\s*on\s*(.+?\d{4})/);
       if (dateMatch) inquiryDate = dateMatch[1].trim();
 
-      // Status
       let inquiryStatus = 'open';
       if (qText.includes('It ended') || qText.includes('Completed')) inquiryStatus = 'completed';
 
-      // Resumen
       let summaryT = '';
       const sumMatch = qText.match(/(?:Summarized by artificial intelligence)\s*\n?\s*(.*?)(?:\n|Review|Details)/s);
       if (sumMatch) summaryT = sumMatch[1].trim();
 
-      // Leer conversacion completa
       let conversationText = '';
       try {
         const reviewBtn = p.locator('a, button').filter({ hasText: /Review the conversation|Go to chat/ });
@@ -181,8 +137,8 @@ async function supabaseUpsert(table, data) {
       } catch (e) {}
 
       await supabaseUpsert('ml_support_inquiries', {
-        store_id: STORE_ID,
-        country: COUNTRY_CODES[COUNTRY],
+        store_id: storeId,
+        country: code,
         inquiry_number: inquiryNumber,
         inquiry_date: inquiryDate || null,
         inquiry_status: inquiryStatus,
@@ -196,6 +152,60 @@ async function supabaseUpsert(table, data) {
     }
   }
 
-  await b.close();
-  console.log(`\n=== Done: ${COUNTRY} ===`);
-})().catch(e => { console.error('FATAL:', e.message); process.exit(1); });
+  console.log(`=== Done: ${country} ===`);
+}
+
+// Export for use by scrape-all.js
+module.exports = { scrapeCountry, COUNTRY_CODES };
+
+// Standalone execution
+if (require.main === module) {
+  const BB_KEY = process.env.BROWSERBASE_API_KEY;
+  const BB_PROJECT = process.env.BROWSERBASE_PROJECT_ID;
+  const BB_CONTEXT = process.env.BB_CONTEXT_49;
+  const STORE_ID = 49;
+  const COUNTRY = process.argv[2] || 'Colombia';
+
+  if (!BB_CONTEXT) {
+    console.error('ERROR: BB_CONTEXT_49 env var not set. Run setup-context.js first.');
+    process.exit(1);
+  }
+
+  (async () => {
+    // Create session with persistent context (no login needed)
+    console.log(`[SESSION] Creating with context ${BB_CONTEXT.substring(0, 8)}...`);
+    const sessResp = await fetch('https://api.browserbase.com/v1/sessions', {
+      method: 'POST',
+      headers: { 'x-bb-api-key': BB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectId: BB_PROJECT,
+        browserSettings: {
+          solveCaptchas: true,
+          context: { id: BB_CONTEXT, persist: true },
+        },
+        proxies: true,
+      }),
+    });
+    const sess = await sessResp.json();
+    if (!sess.connectUrl) { console.error('[SESSION] Failed:', JSON.stringify(sess)); process.exit(1); }
+    console.log(`[SESSION] ${sess.id}`);
+
+    const b = await chromium.connectOverCDP(sess.connectUrl);
+    const ctx = b.contexts()[0];
+    const p = ctx.pages()[0] || await ctx.newPage();
+
+    // Verify login
+    await p.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await p.waitForTimeout(3000);
+    const check = await p.innerText('body');
+    if (!check.includes('Summary') && !check.includes('Add listings')) {
+      console.error('[AUTH] Not logged in. Run setup-context.js to refresh cookies.');
+      await b.close();
+      process.exit(1);
+    }
+    console.log('[AUTH] Logged in via context cookies');
+
+    await scrapeCountry(p, COUNTRY, STORE_ID);
+    await b.close();
+  })().catch(e => { console.error('FATAL:', e.message); process.exit(1); });
+}
