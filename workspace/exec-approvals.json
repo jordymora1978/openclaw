@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "defaults": {
+    "security": "full",
+    "ask": "never",
+    "askFallback": "allow"
+  },
+  "agents": {
+    "main": {
+      "security": "full",
+      "ask": "never",
+      "autoAllowSkills": true
+    }
+  }
+}

@@ -253,99 +253,19 @@ USER node
 #   - GET /healthz (liveness) and GET /readyz (readiness)
 #   - aliases: /health and /ready
 # For external access from host/ingress, override bind to "lan" and set auth.
-RUN mkdir -p /home/node/.openclaw/workspace/memory/casos \
+# Copy workspace, skills, and config as image defaults (entrypoint syncs to volume)
+RUN mkdir -p /home/node/.openclaw/workspace/scripts \
+    /home/node/.openclaw/workspace/memory/casos \
     /home/node/.openclaw/workspace/memory/patrones \
     /home/node/.openclaw/workspace/memory/metricas \
-    /home/node/.openclaw/skills/dropux && \
-    cat > /home/node/.openclaw/config.json <<'OCEOF'
-{
-  "agents": {
-    "defaults": {
-      "model": "openai/gpt-4o-mini"
-    },
-    "list": [
-      {
-        "id": "main",
-        "default": true,
-        "name": "Dropux Ops",
-        "workspace": "/home/node/.openclaw/workspace",
-        "tools": {
-          "profile": "full"
-        }
-      }
-    ]
-  },
-  "skills": {
-    "entries": {
-      "dropux": { "enabled": true }
-    }
-  },
-  "channels": {
-    "telegram": {
-      "enabled": true,
-      "dmPolicy": "allowlist",
-      "allowFrom": ["1742300220"],
-      "groupPolicy": "open",
-      "groups": {
-        "*": {
-          "requireMention": true
-        }
-      }
-    }
-  },
-  "cron": {
-    "enabled": true,
-    "maxConcurrentRuns": 1,
-    "sessionRetention": "24h",
-    "retry": {
-      "maxAttempts": 2,
-      "backoffMs": [30000, 60000],
-      "retryOn": ["network", "timeout", "server_error"]
-    },
-    "failureAlert": {
-      "enabled": true,
-      "after": 2,
-      "cooldownMs": 3600000
-    }
-  },
-  "gateway": {
-    "controlUi": {
-      "dangerouslyAllowHostHeaderOriginFallback": true
-    }
-  }
-}
-OCEOF
-RUN cat > /home/node/.openclaw/exec-approvals.json <<'EAEOF'
-{
-  "version": 1,
-  "defaults": {
-    "security": "full",
-    "ask": "never",
-    "askFallback": "allow"
-  },
-  "agents": {
-    "main": {
-      "security": "full",
-      "ask": "never",
-      "autoAllowSkills": true
-    }
-  }
-}
-EAEOF
-COPY --chown=node:node workspace/AGENTS.md /home/node/.openclaw/workspace/AGENTS.md
-COPY --chown=node:node workspace/SOUL.md /home/node/.openclaw/workspace/SOUL.md
-COPY --chown=node:node workspace/USER.md /home/node/.openclaw/workspace/USER.md
-COPY --chown=node:node workspace/TOOLS.md /home/node/.openclaw/workspace/TOOLS.md
-COPY --chown=node:node workspace/HEARTBEAT.md /home/node/.openclaw/workspace/HEARTBEAT.md
-COPY --chown=node:node workspace/MEMORY.md /home/node/.openclaw/workspace/MEMORY.md
-COPY --chown=node:node workspace/scripts/scrape-ml.js /home/node/.openclaw/workspace/scripts/scrape-ml.js
-COPY --chown=node:node workspace/scripts/test-country-switch.js /home/node/.openclaw/workspace/scripts/test-country-switch.js
-COPY --chown=node:node workspace/scripts/scrape-country.js /home/node/.openclaw/workspace/scripts/scrape-country.js
-COPY --chown=node:node workspace/scripts/analyze-country.js /home/node/.openclaw/workspace/scripts/analyze-country.js
-COPY --chown=node:node workspace/scripts/search-ml.js /home/node/.openclaw/workspace/scripts/search-ml.js
-COPY --chown=node:node workspace/scripts/search-ids.js /home/node/.openclaw/workspace/scripts/search-ids.js
+    /home/node/.openclaw/skills/dropux
+COPY --chown=node:node workspace/*.md /home/node/.openclaw/workspace/
+COPY --chown=node:node workspace/*.json /home/node/.openclaw/
+COPY --chown=node:node workspace/scripts/*.js /home/node/.openclaw/workspace/scripts/
+COPY --chown=node:node workspace/scripts/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 COPY --chown=node:node skills/dropux/SKILL.md /home/node/.openclaw/skills/dropux/SKILL.md
-ENV OPENCLAW_CONFIG_PATH=/home/node/.openclaw/config.json
+
 HEALTHCHECK --interval=3m --timeout=10s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["node", "openclaw.mjs", "gateway", "--allow-unconfigured", "--bind", "lan"]
+CMD ["bash", "/app/entrypoint.sh"]

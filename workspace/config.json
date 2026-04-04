@@ -1,0 +1,56 @@
+{
+  "agents": {
+    "defaults": {
+      "model": "openai/gpt-4o-mini"
+    },
+    "list": [
+      {
+        "id": "main",
+        "default": true,
+        "name": "Dropux Ops",
+        "workspace": "/home/node/.openclaw/workspace",
+        "tools": {
+          "profile": "full"
+        }
+      }
+    ]
+  },
+  "skills": {
+    "entries": {
+      "dropux": { "enabled": true }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": true,
+      "dmPolicy": "allowlist",
+      "allowFrom": ["1742300220"],
+      "groupPolicy": "open",
+      "groups": {
+        "*": {
+          "requireMention": true
+        }
+      }
+    }
+  },
+  "cron": {
+    "enabled": true,
+    "maxConcurrentRuns": 1,
+    "sessionRetention": "24h",
+    "retry": {
+      "maxAttempts": 2,
+      "backoffMs": [30000, 60000],
+      "retryOn": ["network", "timeout", "server_error"]
+    },
+    "failureAlert": {
+      "enabled": true,
+      "after": 2,
+      "cooldownMs": 3600000
+    }
+  },
+  "gateway": {
+    "controlUi": {
+      "dangerouslyAllowHostHeaderOriginFallback": true
+    }
+  }
+}
