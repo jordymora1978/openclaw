@@ -236,9 +236,6 @@ RUN ln -sf /app/openclaw.mjs /usr/local/bin/openclaw \
 
 ENV NODE_ENV=production
 
-# Pre-create persistent volume mount point so the non-root user can write to it.
-RUN mkdir -p /data && chown node:node /data
-
 # Security hardening: Run as non-root user
 # The node:24-bookworm image includes a 'node' user (uid 1000)
 # This reduces the attack surface by preventing container escape via root privileges
@@ -268,6 +265,9 @@ COPY --chown=node:node workspace/scripts/*.js /home/node/.openclaw/workspace/scr
 COPY --chown=node:node workspace/scripts/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 COPY --chown=node:node skills/dropux/SKILL.md /home/node/.openclaw/skills/dropux/SKILL.md
+
+# Entrypoint runs as root to fix volume permissions, then drops to node
+USER root
 
 HEALTHCHECK --interval=3m --timeout=10s --start-period=15s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

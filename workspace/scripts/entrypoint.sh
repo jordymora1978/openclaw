@@ -4,6 +4,10 @@ set -e
 # Persistent volume mount point (Railway volume or /data fallback)
 DEST="${OPENCLAW_VOLUME_PATH:-/data/.openclaw}"
 
+# Fix volume permissions — Railway mounts /data as root
+echo "[entrypoint] Fixing volume permissions on /data"
+chown node:node /data 2>/dev/null || true
+
 echo "[entrypoint] Syncing workspace to persistent volume: $DEST"
 
 # Create directory structure
@@ -38,9 +42,13 @@ cp /home/node/.openclaw/skills/dropux/SKILL.md "$DEST/skills/dropux/"
 # Memory files in volume are NEVER overwritten (agent writes to these at runtime)
 # The mkdir -p above ensures the dirs exist, but content is preserved.
 
+# Ensure node owns everything in the volume
+chown -R node:node "$DEST"
+
 # Point OpenClaw to persistent volume
 export OPENCLAW_STATE_DIR="$DEST"
 export OPENCLAW_CONFIG_PATH="$DEST/config.json"
 
-echo "[entrypoint] Starting gateway (state=$DEST)"
-exec node /app/openclaw.mjs gateway --allow-unconfigured --bind lan
+# Drop to node user for the gateway
+echo "[entrypoint] Starting gateway as node (state=$DEST)"
+exec su -s /bin/bash node -c "OPENCLAW_STATE_DIR=$DEST OPENCLAW_CONFIG_PATH=$DEST/config.json exec node /app/openclaw.mjs gateway --allow-unconfigured --bind lan"
