@@ -284,7 +284,13 @@ RUN mkdir -p /home/node/.openclaw/workspace/memory/casos \
     "telegram": {
       "enabled": true,
       "dmPolicy": "allowlist",
-      "allowFrom": ["1742300220"]
+      "allowFrom": ["1742300220"],
+      "groups": {
+        "-5133738988": {
+          "groupPolicy": "open",
+          "requireMention": false
+        }
+      }
     }
   },
   "cron": {
