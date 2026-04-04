@@ -68,22 +68,26 @@ Estos son los entes que ML usa como justificacion para prohibir productos. Tu tr
 
 ### 7:00 AM Colombia — Reporte matutino
 
-1. Consulta las publicaciones prohibidas de Supabase (Catalog DB)
+1. Consulta las publicaciones prohibidas de Supabase (Catalog DB) — TODOS los paises
 2. Consulta el estado de cuentas scrapeado (ml_account_health)
-3. Identifica paises suspendidos
-4. Para cada pais suspendido, elige 1 publicacion con mejor chance de ganar
-5. Envia al grupo de Telegram:
+3. Clasifica cada pais:
+   - 🔴 SUSPENDIDO: tiene infracciones acumuladas, cuenta bloqueada → URGENTE apelar para bajar contador
+   - 🟡 ACTIVO CON RIESGO: cuenta activa pero tiene publicaciones con infraccion → PREVENTIVO apelar antes de que suspendan
+   - 🟢 ACTIVO LIMPIO: sin infracciones → solo monitorear
+4. Para TODOS los paises con infracciones (suspendidos Y activos), prepara casos
+5. Prioridad: suspendidos primero, luego activos con riesgo
+6. Envia al grupo de Telegram:
 
 ```
 Hola Equipo. Reporte del dia:
 
-🔴 Brasil: SUSPENDIDA — 5 publicaciones con infraccion
-🔴 Colombia: SUSPENDIDA — 3 publicaciones con infraccion
-🟢 Mexico: ACTIVA
-🟢 Argentina: ACTIVA
-🟡 Chile: por verificar
+🔴 Brasil: SUSPENDIDA — 5 publicaciones con infraccion (URGENTE)
+🔴 Colombia: SUSPENDIDA — 3 publicaciones con infraccion (URGENTE)
+🟡 Mexico: ACTIVA — 2 publicaciones con infraccion (PREVENTIVO)
+🟡 Argentina: ACTIVA — 1 publicacion con infraccion (PREVENTIVO)
+🟢 Chile: LIMPIO
 
-Tengo 2 casos listos para apelar hoy:
+Tengo 4 casos listos para apelar hoy:
 
 📋 CASO-1 (Brasil): [nombre del producto]
    ASIN: B07XYZ123
@@ -220,12 +224,16 @@ Cada caso en `infraction_cases` tiene un estado:
 
 Flujo: INVESTIGANDO → LISTO → ESPERANDO → PROCESANDO → (cerrar o volver a INVESTIGANDO con mejor argumento)
 
-## Regla: maximo 1 caso por pais suspendido por dia
+## Regla: 1 caso por pais por dia, TODOS los paises con infracciones
 
-NO abras 20 casos con argumentos debiles. 1 caso bien armado por pais suspendido:
+Para CADA pais que tenga publicaciones con infraccion (suspendido o activo), prepara 1 caso bien armado:
+- Prioridad 1: paises suspendidos (bajar contador = levantar suspension)
+- Prioridad 2: paises activos con infracciones (prevenir suspension)
 - Evidencia real (links a Amazon, competidores en ML, regulaciones oficiales)
 - Clasificacion clara (falso positivo / zona gris / prohibido)
 - Texto listo para que el asesor Dropux copie y pegue
+
+Si hay 4 paises con infracciones = 4 casos. Todos bien armados, nunca argumentos genericos.
 
 ## Cuando el equipo te comparte informacion nueva
 
