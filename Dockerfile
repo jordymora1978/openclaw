@@ -337,6 +337,7 @@ COPY --chown=node:node workspace/scripts/test-country-switch.js /home/node/.open
 COPY --chown=node:node workspace/scripts/scrape-country.js /home/node/.openclaw/workspace/scripts/scrape-country.js
 COPY --chown=node:node workspace/scripts/analyze-country.js /home/node/.openclaw/workspace/scripts/analyze-country.js
 COPY --chown=node:node workspace/scripts/search-ml.js /home/node/.openclaw/workspace/scripts/search-ml.js
+COPY --chown=node:node workspace/scripts/search-ids.js /home/node/.openclaw/workspace/scripts/search-ids.js
 COPY --chown=node:node skills/dropux/SKILL.md /home/node/.openclaw/skills/dropux/SKILL.md
 ENV OPENCLAW_CONFIG_PATH=/home/node/.openclaw/config.json
 HEALTHCHECK --interval=3m --timeout=10s --start-period=15s --retries=3 \
