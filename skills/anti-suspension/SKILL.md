@@ -13,7 +13,7 @@ metadata:
 | Estado | Significado | Quien actua |
 |--------|------------|-------------|
 | INVESTIGANDO | Agente investigando producto, regulaciones, competencia | Agente |
-| LISTO | Argumento armado, listo para enviar a ML | Equipo (Yelitza) |
+| LISTO | Argumento armado, listo para enviar a ML | Equipo (el asesor disponible) |
 | ESPERANDO | Argumento enviado, esperando respuesta de ML | ML |
 | PROCESANDO | ML respondio, evaluando si escalar o cerrar | Agente |
 
@@ -31,7 +31,7 @@ INVESTIGANDO → LISTO → ESPERANDO → PROCESANDO
 NO abrir 20 casos con argumentos genericos. Mejor 5 casos con:
 - Evidencia real (links Amazon, competidores ML, regulaciones)
 - Clasificacion clara (falso positivo / zona gris / prohibido)
-- Argumento que Yelitza pueda copiar y pegar
+- Argumento que el asesor disponible pueda copiar y pegar
 
 ## Consultar casos
 
@@ -87,7 +87,7 @@ Formato de cada entrada en historial_conversacion:
 ```json
 {
   "fecha": "2026-04-04",
-  "actor": "agente|yelitza|asesor_ml",
+  "actor": "agente|asesor_dropux|asesor_ml",
   "accion": "Que hizo",
   "detalle": "Texto completo o resumen"
 }

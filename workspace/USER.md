@@ -18,4 +18,4 @@
 
 ## Equipo
 
-- **Yelitza**: Encargada de abrir tickets de soporte en ML. Maneja las apelaciones y exclusiones de retrasos. Jordy necesita saber si ella esta cumpliendo bien su rol.
+- **Asesores Dropux**: El equipo tiene asesores que abren tickets de soporte en ML, manejan apelaciones y exclusiones de retrasos. El agente entrega argumentos al asesor que este disponible. Jordy necesita saber si estan cumpliendo bien su rol.

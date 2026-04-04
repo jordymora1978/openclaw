@@ -103,9 +103,101 @@ Actualiza `estado` y `proximo_movimiento` en cada caso. El equipo mira `proximo_
 NO abras 20 casos con argumentos debiles. Concentrate en 5-6 casos con:
 - Evidencia real (links a Amazon, competidores en ML, regulaciones oficiales)
 - Clasificacion clara (falso positivo / zona gris / prohibido)
-- Texto listo para que Yelitza copie y pegue
+- Texto listo para que el asesor disponible copie y pegue
 
 Un caso bien armado vale mas que 10 casos con excusas genericas.
+
+### 7. REGLA CRITICA: cada pais es un destino INDEPENDIENTE
+
+MercadoLibre maneja cada pais como un destino separado. Una misma cuenta CBT tiene 5 destinos independientes.
+
+**NUNCA:**
+- Mezclar IDs de items de un pais con otro
+- Usar evidencia de Colombia en un caso de Brasil (o viceversa)
+- Asumir que si un producto esta prohibido en Brasil, tambien lo esta en Colombia
+- Enviar informacion de un destino al asesor que maneja otro destino
+
+**SIEMPRE:**
+- Cada caso, cada argumento, cada evidencia pertenece a UN solo pais
+- Al guardar en appeal_knowledge_base, SIEMPRE poner el country correcto
+- Al consultar, SIEMPRE filtrar por country: `country=eq.BR`
+- Los competidores de MCO (Colombia) solo sirven para casos de Colombia
+- Los competidores de MLB (Brasil) solo sirven para casos de Brasil
+
+Un producto puede estar prohibido en Brasil pero ser perfectamente legal en Colombia. Son mercados y regulaciones diferentes.
+
+### 8. Cuando el equipo te comparte informacion nueva
+
+Si alguien te dice algo como:
+- "Este producto esta prohibido en Brasil por ANVISA"
+- "Encontre competidores vendiendo lo mismo en Colombia: [link]"
+- "El asesor dijo que solo aplica a medicamentos, no suplementos"
+- "Mira este item de la competencia: MCO1234567"
+
+**PASO 1: Si te dan un link o ID, INVESTIGA primero**
+
+Abre el link con el browser local para extraer el contenido relevante:
+```bash
+PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright node -e "
+const {chromium} = require('/app/node_modules/playwright-core');
+(async()=>{
+  const b = await chromium.launch({headless:true, args:['--no-sandbox','--disable-dev-shm-usage']});
+  const p = await b.newPage();
+  await p.goto('URL_AQUI', {waitUntil:'domcontentloaded',timeout:15000});
+  await p.waitForTimeout(2000);
+  const text = await p.innerText('body');
+  console.log(text.substring(0,5000));
+  await b.close();
+})()
+" 2>&1
+```
+
+Si te dan un ID de ML (ej: MCO1234567), consultalo via API publica:
+```bash
+curl -s 'https://api.mercadolibre.com/items/MCO1234567'
+```
+
+**PASO 2: Guarda lo aprendido en appeal_knowledge_base**
+
+```bash
+curl -s "$SUPABASE_URL/rest/v1/appeal_knowledge_base" -X POST \
+  -H "apikey: $SUPABASE_ANON_KEY" \
+  -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "store_id": null,
+    "country": "BR",
+    "category": "Supplements",
+    "ingredient": null,
+    "brand": null,
+    "cause_type": "prohibited_product",
+    "regulatory_body": "ANVISA",
+    "key_insights": "RESUMEN de lo que aprendiste + links originales",
+    "tags": ["tag1", "tag2"],
+    "source": "team_input",
+    "source_ref": "link o referencia original",
+    "relevance_score": 0.8
+  }'
+```
+
+Reglas para guardar:
+- `country` OBLIGATORIO — nunca guardes sin pais (a menos que sea regla global de ML)
+- `store_id` = null si aplica a ambas tiendas (49 y 51)
+- `source` = "team_input" para datos que viene del equipo
+- `source_ref` = el link o ID original que te dieron
+- Si ya existe algo similar para ese pais, ACTUALIZA en vez de duplicar
+- Confirma al equipo: "Guardado para [pais]: [resumen corto]"
+
+**PASO 3: Si es evidencia para un caso activo, actualiza el caso**
+
+Si la informacion es relevante para un caso en `infraction_cases`, agrega al historial:
+```bash
+curl -s "$SUPABASE_URL/rest/v1/infraction_cases?id=eq.UUID" -X PATCH \
+  -H "apikey: $SUPABASE_ANON_KEY" \
+  -H "Authorization: Bearer $SUPABASE_ANON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"historial_conversacion": [ARRAY_EXISTENTE, {"fecha":"HOY","actor":"equipo","accion":"Compartio evidencia","detalle":"..."}]}'
+```
 
 ## Herramientas disponibles
 
