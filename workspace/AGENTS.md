@@ -75,70 +75,58 @@ Ejemplos: APL-BR-001, APL-CO-001, APL-MX-001
 
 Este ID es lo que el equipo usa para referirse a cada caso. SIEMPRE usalo en cada mensaje.
 
-## Flujo de apelaciones
+## Program: Apelaciones de Productos Prohibidos
 
-### Preparacion (3:00 AM o cuando se ejecute el cron)
+**Authority:** Consultar Supabase, buscar en API de ML, investigar en Amazon y entes regulatorios, construir argumentos de apelacion, entregar al equipo por Telegram
+**Trigger:** Cron diario o cuando el equipo diga "dame las apelaciones"
+**Approval gate:** Ninguna — el agente investiga y entrega autonomamente
+**Escalation:** Si Supabase no responde o no hay publicaciones prohibidas, informar al equipo
 
-1. Consulta publicaciones prohibidas de Supabase (Catalog DB) — TODOS los paises
-2. Consulta estado de cuentas (ml_account_health)
-3. Investiga cada publicacion prohibida: Amazon, competidores, regulaciones
-4. Clasifica y arma argumentos
-5. Asigna ID unico a cada caso: APL-BR-001, APL-CO-001, etc.
-6. Guarda en infraction_cases con estado=LISTO
+### Execution Steps — Preparar apelaciones
 
-### Entrega de apelaciones (7:00 AM o cuando el equipo pida)
+Cuando se dispare este programa, ejecuta estos comandos EN ORDEN:
 
-Cuando el equipo dice "Dame las apelaciones" o a la hora programada, DEBES ejecutar estos pasos EN ORDEN. NO inventes datos. Cada dato debe venir de un curl real.
-
-**PASO 1: Obtener publicaciones prohibidas**
+1. Obtener publicaciones prohibidas ejecutando:
 ```bash
-curl -s "$SUPABASE_CATALOG_URL/rest/v1/ml_publications?select=ml_item_id,title,asin,infraction_reason,infraction_remedy,store_id,status,destination_country&problem_type=eq.prohibited&store_id=in.(49,51)&status=neq.active&order=destination_country.asc" \
-  -H "apikey: $SUPABASE_CATALOG_ANON_KEY" \
-  -H "Authorization: Bearer $SUPABASE_CATALOG_ANON_KEY"
+curl -s "$SUPABASE_CATALOG_URL/rest/v1/ml_publications?select=ml_item_id,title,asin,infraction_reason,infraction_remedy,store_id,status,destination_country&problem_type=eq.prohibited&store_id=in.(49,51)&status=neq.active&order=destination_country.asc" -H "apikey: $SUPABASE_CATALOG_ANON_KEY" -H "Authorization: Bearer $SUPABASE_CATALOG_ANON_KEY"
 ```
 
-**PASO 2: Obtener estado de cuentas**
+2. Obtener estado de cuentas ejecutando:
 ```bash
-curl -s "$SUPABASE_URL/rest/v1/ml_account_health?select=country,account_status,status_reason,scraped_date&store_id=eq.49&order=scraped_date.desc" \
-  -H "apikey: $SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $SUPABASE_ANON_KEY"
+curl -s "$SUPABASE_URL/rest/v1/ml_account_health?select=country,account_status,status_reason,scraped_date&store_id=eq.49&order=scraped_date.desc" -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $SUPABASE_ANON_KEY"
 ```
 
-**PASO 3: Con los datos REALES de los pasos 1 y 2, construye el resumen**
-- Lista los paises suspendidos como URGENTES
-- Lista los paises activos con infracciones como PREVENTIVOS
-- Asigna APL-XX-NNN a cada caso usando datos reales (titulo real, ASIN real, ml_item_id real)
-- Pregunta con cual empezar
+3. Con los resultados REALES de los pasos 1 y 2, para CADA publicacion prohibida:
+   a. Buscar competidores CBT en el pais correspondiente ejecutando:
+   ```bash
+   curl -s 'https://api.mercadolibre.com.br/sites/MLB/search?q=TITULO_DEL_PRODUCTO&seller_type=cross_border&limit=5'
+   ```
+   (Cambiar MLB/MCO/MLA/MLC/MLM segun el pais)
 
-**PROHIBIDO:** Nunca escribas datos de ejemplo como "B07XYZ123" o "[nombre del producto]". Si el curl no devuelve datos, di "No encontre publicaciones prohibidas" — no inventes.
+   b. Ver el producto en Amazon: https://www.amazon.com/dp/ASIN_REAL
 
-### El asesor elige un caso
+   c. Clasificar: FALSO POSITIVO (competidores venden lo mismo), ZONA GRIS, o PROHIBIDO REAL
 
-Cuando el asesor elige un caso (ej: "Empiezo con APL-BR-001"), DEBES investigar ese producto especifico:
+4. Asignar ID APL-XX-NNN a cada caso clasificado como FALSO POSITIVO o ZONA GRIS
 
-**PASO 1: Buscar competidores CBT en ML del mismo pais**
-```bash
-curl -s 'https://api.mercadolibre.com.br/sites/MLB/search?q=NOMBRE_DEL_PRODUCTO&seller_type=cross_border&limit=5'
-```
-Usa el titulo real del producto. Extrae los IDs y links de los resultados.
+5. Construir el resumen con datos REALES y enviar al equipo
 
-**PASO 2: Verificar en el ente regulatorio**
-Usa Playwright local para buscar en ANVISA (Brasil), INVIMA (Colombia), etc.
+### What NOT to Do
 
-**PASO 3: Ver el producto en Amazon**
-```bash
-curl -s 'https://api.mercadolibre.com/items/EL_ML_ITEM_ID_REAL'
-```
-Y el link de Amazon: https://www.amazon.com/dp/EL_ASIN_REAL
+- NUNCA uses datos de ejemplo o placeholders. Todo debe salir de los curls ejecutados.
+- Si un curl falla o devuelve vacio, reporta "No encontre publicaciones prohibidas" — no inventes datos.
+- NUNCA copies los ejemplos del AGENTS.md como respuesta. Ejecuta los comandos y usa los resultados.
 
-**PASO 4: Con toda la evidencia REAL, construye el argumento**
-Escribe un texto de apelacion que el asesor pueda copiar y pegar directamente en ML. El texto debe incluir:
-- Que el producto es un suplemento alimenticio legal
-- Links reales a competidores CBT que venden lo mismo
-- Referencia al ente regulatorio si no lo prohibe
-- Tono profesional y respetuoso
+### Execution Steps — Cuando el asesor pide un caso especifico
 
-Termina diciendo: "Abre el ticket en ML y dame el numero de caso."
+Cuando el asesor dice "dame APL-BR-001" o "empiezo con el primero":
+
+1. Ejecuta el curl de busqueda de competidores CBT para ese producto y pais especifico
+2. Ejecuta el curl del item en la API de ML para obtener detalles
+3. Usa Playwright local para buscar en ANVISA/INVIMA si el producto esta prohibido
+4. Con toda la evidencia REAL recopilada, escribe el argumento de apelacion
+5. El argumento debe ser texto que el asesor pueda copiar y pegar directamente en ML
+6. Termina diciendo: "Abre el ticket en ML y dame el numero de caso."
 
 ### El asesor abre el ticket y reporta
 
