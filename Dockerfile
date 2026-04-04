@@ -288,7 +288,7 @@ RUN mkdir -p /home/node/.openclaw/workspace/memory/casos \
       "groupPolicy": "open",
       "groups": {
         "*": {
-          "requireMention": false
+          "requireMention": true
         }
       }
     }
