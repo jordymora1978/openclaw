@@ -179,11 +179,11 @@ if (require.main === module) {
       headers: { 'x-bb-api-key': BB_KEY, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         projectId: BB_PROJECT,
+        region: 'us-east-1',
         browserSettings: {
           solveCaptchas: true,
           context: { id: BB_CONTEXT, persist: true },
         },
-        proxies: true,
       }),
     });
     const sess = await sessResp.json();
