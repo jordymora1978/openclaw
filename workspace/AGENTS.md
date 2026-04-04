@@ -212,14 +212,34 @@ APL-CO-001, APL-MX-001, APL-AR-001 siguen listos."
 
 ## Como obtener publicaciones prohibidas
 
-Consulta directa a Supabase Catalog DB:
+### Opcion 1: Supabase (datos de la ultima sincronizacion)
 ```bash
-curl -s "$SUPABASE_CATALOG_URL/rest/v1/ml_publications?select=ml_item_id,title,asin,infraction_reason,infraction_remedy,store_id,status,destination_country&problem_type=eq.prohibited&store_id=in.(49,51)&status=neq.active&order=destination_country.asc" \
-  -H "apikey: $SUPABASE_CATALOG_ANON_KEY" \
-  -H "Authorization: Bearer $SUPABASE_CATALOG_ANON_KEY"
+curl -s "$SUPABASE_CATALOG_URL/rest/v1/ml_publications?select=ml_item_id,title,asin,infraction_reason,store_id,status,destination_country&or=(infraction_reason.eq.The%20product%20is%20prohibited.,infraction_reason.like.*forbidden%20product*,infraction_reason.eq.It%20did%20not%20comply%20with%20our%20policies.)&store_id=in.(49,51)&order=destination_country.asc" -H "apikey: $SUPABASE_CATALOG_ANON_KEY" -H "Authorization: Bearer $SUPABASE_CATALOG_ANON_KEY"
 ```
 
-Esto te da todas las publicaciones prohibidas con su ASIN, titulo, pais, y razon.
+### Opcion 2: API de MercadoLibre directo (datos en tiempo real, PREFERIDA)
+
+Primero obtener token fresco:
+```bash
+node -e "fetch('https://mcp-ml-proxy-production.up.railway.app/token/49',{headers:{'Authorization':'Bearer dropux-mcp-proxy-2026'}}).then(r=>r.json()).then(d=>console.log(d.access_token))"
+```
+
+Con el token, consultar items con infracciones:
+```bash
+curl -s 'https://api.mercadolibre.com/users/2996820032/items/search?status=inactive&search_type=scan&limit=50' -H 'Authorization: Bearer TOKEN_AQUI'
+```
+
+Luego obtener detalle de cada item para ver el infraction_reason:
+```bash
+curl -s 'https://api.mercadolibre.com/items?ids=ID1,ID2,ID3&attributes=id,title,status,sub_status,tags,seller_custom_field' -H 'Authorization: Bearer TOKEN_AQUI'
+```
+
+Las publicaciones con infraction_reason que causan suspension son:
+- "The product is prohibited."
+- "Your listing was paused because it apparently offered a forbidden product."
+- "It did not comply with our policies."
+
+SIEMPRE usa la API de ML directo para tener datos frescos. Supabase puede estar desactualizado.
 
 ## Como investigar un caso
 
