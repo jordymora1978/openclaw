@@ -88,7 +88,7 @@ Cuando se dispare este programa, ejecuta estos comandos EN ORDEN:
 
 1. Obtener publicaciones prohibidas ejecutando:
 ```bash
-curl -s "$SUPABASE_CATALOG_URL/rest/v1/ml_publications?select=ml_item_id,title,asin,infraction_reason,store_id,status,destination_country&or=(infraction_reason.eq.The%20product%20is%20prohibited.,infraction_reason.like.*forbidden%20product*)&store_id=in.(49,51)&order=destination_country.asc" -H "apikey: $SUPABASE_CATALOG_ANON_KEY" -H "Authorization: Bearer $SUPABASE_CATALOG_ANON_KEY"
+curl -s "$SUPABASE_CATALOG_URL/rest/v1/ml_publications?select=ml_item_id,title,asin,infraction_reason,store_id,status,destination_country&or=(infraction_reason.eq.The%20product%20is%20prohibited.,infraction_reason.like.*forbidden%20product*,infraction_reason.eq.It%20did%20not%20comply%20with%20our%20policies.)&store_id=in.(49,51)&order=destination_country.asc" -H "apikey: $SUPABASE_CATALOG_ANON_KEY" -H "Authorization: Bearer $SUPABASE_CATALOG_ANON_KEY"
 ```
 
 2. Obtener estado de cuentas ejecutando:
