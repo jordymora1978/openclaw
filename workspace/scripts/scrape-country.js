@@ -107,21 +107,14 @@ async function supabaseUpsert(table, data) {
     await p.waitForTimeout(3000);
   } catch (e) {}
 
-  // Contar inquiries
-  const links = await p.locator('a, button').filter({ hasText: /Go to the inquir|Go to chat/ }).all();
-  console.log(`[INQUIRIES] Found ${links.length}`);
+  // Recolectar todos los hrefs ANTES de iterar (evita re-navegacion a /help/v2)
+  const hrefs = await p.locator('a').filter({ hasText: /Go to the inquir|Go to chat/ })
+    .evaluateAll(els => els.map(el => el.href).filter(Boolean));
+  console.log(`[INQUIRIES] Found ${hrefs.length} inquiry links`);
 
-  for (let i = 0; i < links.length; i++) {
+  for (let i = 0; i < hrefs.length; i++) {
     try {
-      // Re-navegar para evitar stale
-      await p.goto('https://global-selling.mercadolibre.com/help/v2', { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await p.waitForTimeout(2000);
-      try { await p.getByText('Show all').click({ timeout: 3000 }); await p.waitForTimeout(2000); } catch (e) {}
-
-      const currentLinks = await p.locator('a, button').filter({ hasText: /Go to the inquir|Go to chat/ }).all();
-      if (i >= currentLinks.length) break;
-
-      await currentLinks[i].click();
+      await p.goto(hrefs[i], { waitUntil: 'domcontentloaded', timeout: 20000 });
       await p.waitForTimeout(3000);
 
       const qText = await p.innerText('body');
