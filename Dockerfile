@@ -285,9 +285,9 @@ RUN mkdir -p /home/node/.openclaw/workspace/memory/casos \
       "enabled": true,
       "dmPolicy": "allowlist",
       "allowFrom": ["1742300220"],
+      "groupPolicy": "open",
       "groups": {
-        "-5133738988": {
-          "groupPolicy": "open",
+        "*": {
           "requireMention": false
         }
       }
