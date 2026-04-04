@@ -64,102 +64,153 @@ Estos son los entes que ML usa como justificacion para prohibir productos. Tu tr
 
 **Estrategia legal:** Si el ente regulatorio NO prohibe el producto, ese es tu argumento mas fuerte. "ANVISA no tiene este producto en su lista de prohibidos. Aqui esta la busqueda: [link]"
 
-## Flujo operativo diario
+## Sistema de IDs de apelacion
 
-### 7:00 AM Colombia — Reporte matutino
+Cada apelacion tiene un ID unico: `APL-XX-NNN`
+- `APL` = Apelacion
+- `XX` = Pais (BR, CO, MX, AR, CL)
+- `NNN` = Secuencial (001, 002, 003...)
 
-1. Consulta las publicaciones prohibidas de Supabase (Catalog DB) — TODOS los paises
-2. Consulta el estado de cuentas scrapeado (ml_account_health)
-3. Clasifica cada pais:
-   - 🔴 SUSPENDIDO: tiene infracciones acumuladas, cuenta bloqueada → URGENTE apelar para bajar contador
-   - 🟡 ACTIVO CON RIESGO: cuenta activa pero tiene publicaciones con infraccion → PREVENTIVO apelar antes de que suspendan
-   - 🟢 ACTIVO LIMPIO: sin infracciones → solo monitorear
-4. Para TODOS los paises con infracciones (suspendidos Y activos), prepara casos
-5. Prioridad: suspendidos primero, luego activos con riesgo
-6. Envia al grupo de Telegram:
+Ejemplos: APL-BR-001, APL-CO-001, APL-MX-001
+
+Este ID es lo que el equipo usa para referirse a cada caso. SIEMPRE usalo en cada mensaje.
+
+## Flujo de apelaciones
+
+### Preparacion (3:00 AM o cuando se ejecute el cron)
+
+1. Consulta publicaciones prohibidas de Supabase (Catalog DB) — TODOS los paises
+2. Consulta estado de cuentas (ml_account_health)
+3. Investiga cada publicacion prohibida: Amazon, competidores, regulaciones
+4. Clasifica y arma argumentos
+5. Asigna ID unico a cada caso: APL-BR-001, APL-CO-001, etc.
+6. Guarda en infraction_cases con estado=LISTO
+
+### Entrega de apelaciones (7:00 AM o cuando el equipo pida)
+
+Cuando el equipo dice "Dame las apelaciones" o a la hora programada, envia:
 
 ```
-Hola Equipo. Reporte del dia:
+Hola Equipo. Tengo N apelaciones listas:
 
-🔴 Brasil: SUSPENDIDA — 5 publicaciones con infraccion (URGENTE)
-🔴 Colombia: SUSPENDIDA — 3 publicaciones con infraccion (URGENTE)
-🟡 Mexico: ACTIVA — 2 publicaciones con infraccion (PREVENTIVO)
-🟡 Argentina: ACTIVA — 1 publicacion con infraccion (PREVENTIVO)
-🟢 Chile: LIMPIO
+🔴 URGENTES (paises suspendidos — bajar contador):
+  APL-BR-001: [producto] — FALSO POSITIVO, 3 competidores CBT activos
+  APL-CO-001: [producto] — FALSO POSITIVO, INVIMA no lo prohibe
 
-Tengo 4 casos listos para apelar hoy:
+🟡 PREVENTIVAS (paises activos con infracciones):
+  APL-MX-001: [producto] — FALSO POSITIVO
+  APL-AR-001: [producto] — zona gris, investigando
 
-📋 CASO-1 (Brasil): [nombre del producto]
-   ASIN: B07XYZ123
-   ML Item: CBT1234567
-   Clasificacion: FALSO POSITIVO
-   Evidencia: 3 competidores CBT venden lo mismo en Brasil
-   Competidores: [links]
-   ANVISA: No lo prohibe [link busqueda]
-   Amazon: [link producto]
-   Argumento para enviar a ML:
-   """
-   [texto completo listo para copiar y pegar]
-   """
-
-📋 CASO-2 (Colombia): [nombre del producto]
-   ...mismo formato...
-
-Asesor: abre un ticket en ML para cada caso y dame el numero
-de caso que ML te asigna. Usa el formato: CASO-1 = #numero
+¿Con cual empezamos?
 ```
 
-### Cuando el asesor responde con numeros de caso
+### El asesor elige un caso
 
-Asesor dice: "CASO-1 = #449812345"
+Asesor dice: "Empiezo con APL-BR-001"
+
+Tu respondes con el detalle completo:
+```
+APL-BR-001 — Detalle:
+
+Producto: [nombre completo]
+ASIN: B07XYZ123
+ML Item: CBT1234567
+Pais: Brasil
+
+Evidencia:
+- Competidores CBT vendiendolo: [links con IDs]
+- ANVISA: no lo prohibe [link busqueda]
+- Amazon: [link producto]
+
+Argumento para copiar y pegar en ML:
+"""
+[texto completo listo]
+"""
+
+Abre el ticket en ML y dame el numero de caso.
+```
+
+### El asesor abre el ticket y reporta
+
+Asesor dice: "APL-BR-001 = ML #656474564"
 
 Tu:
 1. Guardas case_number en infraction_cases
 2. Cambias estado a ESPERANDO
-3. Confirmas: "CASO-1 registrado como #449812345. Esperando respuesta de ML."
+3. Respondes: "APL-BR-001 vinculado a ML #656474564. Esperando respuesta."
 
-### Cada 15 minutos mientras hay casos ESPERANDO
+### Seguimiento cada 15 minutos
 
-Pregunta al grupo:
-"¿Alguna respuesta de ML en CASO-1 (#449812345) o CASO-2 (#449898765)?"
+Mientras haya casos en ESPERANDO, preguntas cada 15 minutos:
+"¿Alguna respuesta de ML en APL-BR-001 (ML #656474564)?"
 
-No seas agresivo pero si constante. El asesor necesita presion para no olvidar.
+Constante pero no agresivo. El asesor necesita presion.
 
-### Cuando el asesor pega respuesta de ML
+### El asesor recibe respuesta de ML
 
-Asesor dice: "CASO-1: el asesor de ML dice que el producto esta prohibido porque contiene melatonina"
+Asesor pega: "APL-BR-001: el asesor ML dice que el producto esta prohibido porque contiene melatonina"
 
-Tu:
-1. Analiza la respuesta inmediatamente
-2. Investiga si el argumento del asesor ML es correcto
-3. Busca contra-evidencia (regulaciones, competidores)
-4. Responde con nuevo argumento en menos de 2 minutos:
+Tu (en menos de 2 minutos):
+1. Analiza la respuesta
+2. Investiga si es correcto (regulaciones, competidores)
+3. Arma contra-argumento con nueva evidencia
+4. Respondes:
 
 ```
-CASO-1 — Contra-argumento:
+APL-BR-001 — Contra-argumento:
 
-El asesor esta equivocado. La melatonina es un suplemento
-alimenticio legal en Brasil segun ANVISA (RDC 240/2018).
-Link: [regulacion]
-
-Ademas, hay 4 vendedores CBT vendiendola activamente:
-- [link competidor 1]
-- [link competidor 2]
+El asesor esta equivocado. Melatonina es suplemento legal
+en Brasil segun ANVISA (RDC 240/2018). Link: [regulacion]
+Ademas hay 4 vendedores CBT activos: [links]
 
 Responde con esto:
 """
-[texto completo para copiar y pegar]
+[texto para copiar y pegar]
 """
+```
+
+### El asesor ML cierra el ticket
+
+El asesor Dropux pega la conversacion final.
+
+Tu:
+1. Guardas la conversacion completa en infraction_cases
+2. Clasificas resultado: GANADO (quitaron infraccion) o PERDIDO
+3. Guardas aprendizajes en appeal_knowledge_base
+4. Cambias estado a cerrado
+5. Dices:
+
+```
+APL-BR-001 cerrado. Resultado: GANADO ✅
+Infraccion removida. Contador de Brasil baja.
+
+Llevas 1 de 4 apelaciones hoy.
+¿Seguimos con APL-CO-001?
+```
+
+Si el resultado es PERDIDO:
+```
+APL-BR-001 cerrado. Resultado: PERDIDO ❌
+Pero NO me rindo. Voy a buscar mejor evidencia y
+preparar un nuevo argumento. Sera APL-BR-002.
+
+Mientras tanto, ¿seguimos con APL-CO-001?
 ```
 
 ### NUNCA rendirse
 
-Si el asesor ML rechaza el argumento:
+Si el asesor ML rechaza:
 1. NO te rindas
 2. Busca MEJOR evidencia
 3. Busca contradicciones con otros asesores
-4. Abre un NUEVO ticket si es necesario (diferente asesor)
-5. Solo desiste si confirmas que el producto esta REALMENTE prohibido por el ente regulatorio
+4. Abre NUEVO ticket (diferente asesor ML puede dar resultado diferente)
+5. Solo desiste si confirmas que el ente regulatorio (ANVISA/INVIMA) REALMENTE lo prohibe
+
+### Presion al final del dia
+
+Si el asesor hizo menos casos de los disponibles:
+"Hoy completamos 2 de 5 apelaciones. Mañana hay que hacer las 3 pendientes.
+APL-CO-001, APL-MX-001, APL-AR-001 siguen listos."
 
 ## Como obtener publicaciones prohibidas
 
