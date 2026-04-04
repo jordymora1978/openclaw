@@ -88,47 +88,57 @@ Este ID es lo que el equipo usa para referirse a cada caso. SIEMPRE usalo en cad
 
 ### Entrega de apelaciones (7:00 AM o cuando el equipo pida)
 
-Cuando el equipo dice "Dame las apelaciones" o a la hora programada, envia:
+Cuando el equipo dice "Dame las apelaciones" o a la hora programada, DEBES ejecutar estos pasos EN ORDEN. NO inventes datos. Cada dato debe venir de un curl real.
 
+**PASO 1: Obtener publicaciones prohibidas**
+```bash
+curl -s "$SUPABASE_CATALOG_URL/rest/v1/ml_publications?select=ml_item_id,title,asin,infraction_reason,infraction_remedy,store_id,status,destination_country&problem_type=eq.prohibited&store_id=in.(49,51)&status=neq.active&order=destination_country.asc" \
+  -H "apikey: $SUPABASE_CATALOG_ANON_KEY" \
+  -H "Authorization: Bearer $SUPABASE_CATALOG_ANON_KEY"
 ```
-Hola Equipo. Tengo N apelaciones listas:
 
-🔴 URGENTES (paises suspendidos — bajar contador):
-  APL-BR-001: [producto] — FALSO POSITIVO, 3 competidores CBT activos
-  APL-CO-001: [producto] — FALSO POSITIVO, INVIMA no lo prohibe
-
-🟡 PREVENTIVAS (paises activos con infracciones):
-  APL-MX-001: [producto] — FALSO POSITIVO
-  APL-AR-001: [producto] — zona gris, investigando
-
-¿Con cual empezamos?
+**PASO 2: Obtener estado de cuentas**
+```bash
+curl -s "$SUPABASE_URL/rest/v1/ml_account_health?select=country,account_status,status_reason,scraped_date&store_id=eq.49&order=scraped_date.desc" \
+  -H "apikey: $SUPABASE_ANON_KEY" \
+  -H "Authorization: Bearer $SUPABASE_ANON_KEY"
 ```
+
+**PASO 3: Con los datos REALES de los pasos 1 y 2, construye el resumen**
+- Lista los paises suspendidos como URGENTES
+- Lista los paises activos con infracciones como PREVENTIVOS
+- Asigna APL-XX-NNN a cada caso usando datos reales (titulo real, ASIN real, ml_item_id real)
+- Pregunta con cual empezar
+
+**PROHIBIDO:** Nunca escribas datos de ejemplo como "B07XYZ123" o "[nombre del producto]". Si el curl no devuelve datos, di "No encontre publicaciones prohibidas" — no inventes.
 
 ### El asesor elige un caso
 
-Asesor dice: "Empiezo con APL-BR-001"
+Cuando el asesor elige un caso (ej: "Empiezo con APL-BR-001"), DEBES investigar ese producto especifico:
 
-Tu respondes con el detalle completo:
+**PASO 1: Buscar competidores CBT en ML del mismo pais**
+```bash
+curl -s 'https://api.mercadolibre.com.br/sites/MLB/search?q=NOMBRE_DEL_PRODUCTO&seller_type=cross_border&limit=5'
 ```
-APL-BR-001 — Detalle:
+Usa el titulo real del producto. Extrae los IDs y links de los resultados.
 
-Producto: [nombre completo]
-ASIN: B07XYZ123
-ML Item: CBT1234567
-Pais: Brasil
+**PASO 2: Verificar en el ente regulatorio**
+Usa Playwright local para buscar en ANVISA (Brasil), INVIMA (Colombia), etc.
 
-Evidencia:
-- Competidores CBT vendiendolo: [links con IDs]
-- ANVISA: no lo prohibe [link busqueda]
-- Amazon: [link producto]
-
-Argumento para copiar y pegar en ML:
-"""
-[texto completo listo]
-"""
-
-Abre el ticket en ML y dame el numero de caso.
+**PASO 3: Ver el producto en Amazon**
+```bash
+curl -s 'https://api.mercadolibre.com/items/EL_ML_ITEM_ID_REAL'
 ```
+Y el link de Amazon: https://www.amazon.com/dp/EL_ASIN_REAL
+
+**PASO 4: Con toda la evidencia REAL, construye el argumento**
+Escribe un texto de apelacion que el asesor pueda copiar y pegar directamente en ML. El texto debe incluir:
+- Que el producto es un suplemento alimenticio legal
+- Links reales a competidores CBT que venden lo mismo
+- Referencia al ente regulatorio si no lo prohibe
+- Tono profesional y respetuoso
+
+Termina diciendo: "Abre el ticket en ML y dame el numero de caso."
 
 ### El asesor abre el ticket y reporta
 
