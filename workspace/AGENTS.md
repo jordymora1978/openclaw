@@ -85,9 +85,41 @@ Para cada pais suspendido:
 
 ## Herramientas disponibles
 
+### API publica de MercadoLibre (PREFERIDA para busquedas)
+Para buscar productos y competidores. No necesita login, no gasta Browserbase.
+
+Buscar productos en un pais:
+```bash
+curl -s 'https://api.mercadolibre.com.co/sites/MCO/search?q=BUSQUEDA&limit=10'
+```
+
+Buscar solo vendedores internacionales (CBT):
+```bash
+curl -s 'https://api.mercadolibre.com.co/sites/MCO/search?q=BUSQUEDA&seller_type=cross_border&limit=10'
+```
+
+Sites por pais: MCO (Colombia), MLB (Brasil), MLA (Argentina), MLC (Chile), MLM (Mexico)
+
+Ver detalle de un producto:
+```bash
+curl -s 'https://api.mercadolibre.com/items/MCO1234567'
+```
+
+### Catalogo Dropux (Supabase Catalog DB)
+Para buscar nuestros productos por ml_item_id y obtener el ASIN:
+```bash
+curl -s "$SUPABASE_CATALOG_URL/rest/v1/ml_publications?select=ml_item_id,asin,title,price,status&ml_item_id=eq.MCO1234567" \
+  -H "apikey: $SUPABASE_CATALOG_ANON_KEY" \
+  -H "Authorization: Bearer $SUPABASE_CATALOG_ANON_KEY"
+```
+
+Con el ASIN, ver el producto en Amazon: https://www.amazon.com/dp/[ASIN]
+
 ### Browser (Browserbase)
-Para investigar productos, buscar competidores, leer regulaciones.
-Usa Playwright con conexion directa.
+SOLO para cosas que no se pueden hacer con API:
+- Leer el panel de soporte de ML (inquiries, conversaciones)
+- Leer regulaciones en sitios oficiales (INVIMA, ANVISA)
+- Ver paginas que bloquean acceso por API
 
 ### Supabase
 ```bash
