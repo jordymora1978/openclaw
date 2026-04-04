@@ -1,56 +1,71 @@
 /**
- * Busca productos en ML público después de loguearse
- * Uso: node /home/node/.openclaw/workspace/scripts/search-ml.js "vitaminas prenatales" MCO 2>&1
+ * Busca productos en ML público usando proxy del país correspondiente
+ * NO necesita login — usa proxy de Browserbase para parecer un usuario local
+ *
+ * Uso: PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright node /home/node/.openclaw/workspace/scripts/search-ml.js "vitaminas prenatales" CO 2>&1
  */
 const { chromium } = require('/app/node_modules/playwright-core');
 
 const BB_KEY = process.env.BROWSERBASE_API_KEY;
-const ML_USER = process.env.ML_USER_49;
-const ML_PASS = process.env.ML_PASS_49;
+const BB_PROJECT = process.env.BROWSERBASE_PROJECT_ID;
 const QUERY = process.argv[2] || 'vitaminas prenatales';
-const SITE = process.argv[3] || 'MCO';
+const COUNTRY = process.argv[3] || 'CO';
 
-const SITE_URLS = {
-  MCO: 'mercadolibre.com.co',
-  MLB: 'mercadolibre.com.br',
-  MLA: 'mercadolibre.com.ar',
-  MLC: 'mercadolibre.cl',
-  MLM: 'mercadolibre.com.mx',
+const COUNTRY_CONFIG = {
+  CO: { domain: 'mercadolibre.com.co', city: 'BOGOTA', name: 'Colombia' },
+  BR: { domain: 'mercadolibre.com.br', city: 'SAO PAULO', name: 'Brasil' },
+  AR: { domain: 'mercadolibre.com.ar', city: 'BUENOS AIRES', name: 'Argentina' },
+  CL: { domain: 'mercadolibre.cl', city: 'SANTIAGO', name: 'Chile' },
+  MX: { domain: 'mercadolibre.com.mx', city: 'MEXICO CITY', name: 'Mexico' },
 };
 
 (async () => {
-  console.log(`=== Buscar en ML: "${QUERY}" (${SITE}) ===`);
+  const config = COUNTRY_CONFIG[COUNTRY];
+  if (!config) { console.error('Pais no valido:', COUNTRY); process.exit(1); }
 
-  const b = await chromium.connectOverCDP('wss://connect.browserbase.com?apiKey=' + BB_KEY);
+  console.log(`=== Buscar en ML ${config.name}: "${QUERY}" ===`);
+
+  // Crear sesion con proxy del pais
+  const sessionResp = await fetch('https://api.browserbase.com/v1/sessions', {
+    method: 'POST',
+    headers: { 'X-BB-API-Key': BB_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      projectId: BB_PROJECT,
+      proxies: [{
+        type: 'browserbase',
+        geolocation: { country: COUNTRY, city: config.city },
+      }],
+    }),
+  });
+  const session = await sessionResp.json();
+  if (!session.connectUrl) {
+    console.error('Error creando sesion:', JSON.stringify(session));
+    process.exit(1);
+  }
+  console.log('[SESSION] Proxy:', config.city, COUNTRY);
+
+  const b = await chromium.connectOverCDP(session.connectUrl);
   const ctx = b.contexts()[0];
   const p = ctx.pages()[0] || await ctx.newPage();
 
-  // Login
-  console.log('[LOGIN]...');
-  await p.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await p.waitForTimeout(3000);
-  await p.fill('input[name=user_id]', ML_USER);
-  await p.click('button[type=submit]');
-  await p.waitForTimeout(5000);
-  await p.locator('button[aria-labelledby*=password]').first().click();
-  await p.waitForTimeout(3000);
-  await p.fill('input[type=password]', ML_PASS);
-  await p.click('button[type=submit]');
-  await p.waitForTimeout(5000);
-  console.log('[LOGIN] OK');
-
-  // Buscar
-  const domain = SITE_URLS[SITE] || SITE_URLS.MCO;
+  // Buscar directamente — no necesita login con proxy local
   const searchQuery = QUERY.replace(/\s+/g, '-');
-  const url = `https://listado.${domain}/${searchQuery}`;
-  console.log(`[SEARCH] ${url}`);
+  const url = `https://listado.${config.domain}/${searchQuery}`;
+  console.log('[URL]', url);
 
   await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await p.waitForTimeout(5000);
 
   const text = await p.innerText('body');
-  console.log('\n=== RESULTADOS ===');
-  console.log(text.substring(0, 4000));
+
+  // Verificar si pide login
+  if (text.includes('ingresa a') && text.includes('tu cuenta')) {
+    console.log('[ERROR] ML sigue pidiendo login incluso con proxy local');
+    console.log(text.substring(0, 500));
+  } else {
+    console.log('\n=== RESULTADOS ===');
+    console.log(text.substring(0, 4000));
+  }
 
   await b.close();
   console.log('\n=== FIN ===');
