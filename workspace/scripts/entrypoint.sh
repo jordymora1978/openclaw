@@ -18,31 +18,33 @@ mkdir -p "$DEST/workspace/scripts" \
          "$DEST/skills/dropux" \
          "$DEST/skills/anti-suspension"
 
-# Config files: copy only if not present (preserve manual edits)
+# ALL files: copy only if not present (edit in volume, restart without rebuild)
+# To force update from git: delete the file in volume, then restart
+
+# Config
 for f in config.json exec-approvals.json; do
-  if [ ! -f "$DEST/$f" ]; then
-    echo "[entrypoint] First deploy — copying default $f"
-    cp "/home/node/.openclaw/$f" "$DEST/$f"
-  else
-    echo "[entrypoint] $f already exists in volume, keeping it"
-  fi
+  [ -f "$DEST/$f" ] || cp "/home/node/.openclaw/$f" "$DEST/$f"
 done
 
-# Workspace .md files: always sync from image (source of truth in git)
-echo "[entrypoint] Syncing workspace .md files"
-cp /home/node/.openclaw/workspace/*.md "$DEST/workspace/"
+# Workspace .md
+for f in /home/node/.openclaw/workspace/*.md; do
+  base=$(basename "$f")
+  [ -f "$DEST/workspace/$base" ] || cp "$f" "$DEST/workspace/$base"
+done
 
-# Scripts: always sync from image
-echo "[entrypoint] Syncing workspace scripts"
-cp /home/node/.openclaw/workspace/scripts/*.js "$DEST/workspace/scripts/"
+# Scripts .js
+for f in /home/node/.openclaw/workspace/scripts/*.js; do
+  base=$(basename "$f")
+  [ -f "$DEST/workspace/scripts/$base" ] || cp "$f" "$DEST/workspace/scripts/$base"
+done
 
-# Skills: always sync from image
-echo "[entrypoint] Syncing skills"
-cp /home/node/.openclaw/skills/dropux/SKILL.md "$DEST/skills/dropux/"
-cp /home/node/.openclaw/skills/anti-suspension/SKILL.md "$DEST/skills/anti-suspension/"
+# Skills
+for skill in dropux anti-suspension; do
+  src="/home/node/.openclaw/skills/$skill/SKILL.md"
+  [ -f "$DEST/skills/$skill/SKILL.md" ] || [ ! -f "$src" ] || cp "$src" "$DEST/skills/$skill/SKILL.md"
+done
 
-# Memory files in volume are NEVER overwritten (agent writes to these at runtime)
-# The mkdir -p above ensures the dirs exist, but content is preserved.
+echo "[entrypoint] Volume ready (files only copied if missing)"
 
 # Ensure node owns everything in the volume
 chown -R node:node "$DEST"
