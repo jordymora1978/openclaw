@@ -76,8 +76,40 @@ if (!BB_CONTEXT) {
 
   // Summary
   const elapsed = Math.round((Date.now() - startTime) / 1000);
-  console.log(`\n=== All Done (${elapsed}s) ===`);
+  const countriesOk = results.filter(r => r.status === 'ok').map(r => r.country);
+  const countriesFail = results.filter(r => r.status === 'error').map(r => r.country);
+  const errors = results.filter(r => r.error).map(r => `${r.country}: ${r.error}`);
+  const status = countriesFail.length === 0 ? 'success' : countriesOk.length === 0 ? 'error' : 'partial';
+
+  console.log(`\n=== All Done (${elapsed}s) — ${status} ===`);
   for (const r of results) {
     console.log(`  ${r.country}: ${r.status}${r.error ? ' — ' + r.error : ''}`);
+  }
+
+  // Save log to scrape_logs
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/scrape_logs`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({
+        scrape_type: 'inquiries',
+        store_id: STORE_ID,
+        countries_scraped: countriesOk,
+        countries_failed: countriesFail,
+        errors: errors,
+        duration_ms: elapsed * 1000,
+        status: status,
+      }),
+    });
+    console.log('[LOG] Saved to scrape_logs');
+  } catch (e) {
+    console.error('[LOG] Failed:', e.message);
   }
 })().catch(e => { console.error('FATAL:', e.message); process.exit(1); });
