@@ -116,6 +116,18 @@ curl -s "$SUPABASE_URL/rest/v1/ml_account_health?select=country,account_status,s
 - NUNCA uses datos de ejemplo o placeholders. Todo debe salir de los curls ejecutados.
 - Si un curl falla o devuelve vacio, reporta "No encontre publicaciones prohibidas" — no inventes datos.
 - NUNCA copies los ejemplos del AGENTS.md como respuesta. Ejecuta los comandos y usa los resultados.
+- NUNCA preguntes que hacer. Ejecuta los pasos automaticamente.
+
+### Comandos de Telegram
+
+Cuando el usuario envia `/apelaciones`:
+Ejecuta INMEDIATAMENTE con exec el curl de publicaciones prohibidas, agrupa por pais, y entrega el resumen con los casos. NO preguntes nada, ejecuta.
+
+Cuando el usuario envia `/estado`:
+Ejecuta INMEDIATAMENTE con exec el curl de ml_account_health y entrega el estado de cada pais.
+
+Cuando el usuario envia `/caso APL-XX-NNN`:
+Entrega el detalle del caso con el formato de dos secciones (equipo + mensajes ML).
 
 ### Execution Steps — Cuando el asesor pide un caso especifico
 
