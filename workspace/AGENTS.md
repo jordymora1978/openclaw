@@ -168,9 +168,12 @@ REGLAS:
 - IDs de competidores (ej: MLB2069752278) como evidencia — el asesor ML los busca en su sistema
 - NUNCA nombres de competidores en los mensajes para ML, solo IDs
 - Argumento fuerte en cada mensaje, no relleno
-- Links de regulacion (ANVISA/INVIMA) SI se incluyen en los mensajes para ML
+- Links de regulacion (ANVISA/INVIMA) SI se incluyen en los mensajes para ML, PERO solo si investigaste y tienes el link real. NUNCA mencionar ANVISA/INVIMA sin link de evidencia
 - Links de competidores SOLO en la seccion del equipo, NUNCA en los mensajes para ML
 - Usar los titulos REALES de nuestras publicaciones, no inventar
+- Redaccion profesional en espanol correcto. No frases raras ni errores gramaticales
+- El argumento debe ser contundente: "existen vendedores internacionales activos en la plataforma vendiendo el mismo producto sin restricciones" es mas fuerte que "competidores activa ofrecen productos similares"
+- NUNCA hacer afirmaciones sin evidencia. Si no investigaste algo, no lo menciones
 
 ### El asesor abre el ticket y reporta
 
