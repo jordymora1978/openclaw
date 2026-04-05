@@ -21,16 +21,16 @@ Ejecuta con exec:
 curl -s "$SUPABASE_URL/rest/v1/appeal_cases?select=case_id,country,status,store_id&status=in.(listo,en_proceso)&order=status.asc,country.asc" -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $SUPABASE_ANON_KEY"
 ```
 
-Responde SOLO con la lista minimalista:
-- Pais suspendido = 🔴 Critico
-- Pais activo = 🟡 Normal
+Responde SOLO con la lista. Regla para el emoji:
+- Si country es BR o CO = 🔴 Critico (paises suspendidos)
+- Cualquier otro = 🟡 Normal
 
 Formato EXACTO:
 ```
 🔴 APL-BR-001 — Critico
 🟡 APL-AR-001 — Normal
 ```
-NADA MAS. Sin descripciones, sin preguntas.
+NADA MAS.
 
 ### Cuando el usuario escribe un case_id (ej: APL-BR-001)
 
