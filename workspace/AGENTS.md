@@ -150,14 +150,20 @@ Links de competidores NO se incluyen (solo IDs).
 
 ```
 [1/N]
-[texto copiable directo — max 300 chars — con IDs y argumento]
+Nuestros IDs + que son (suplementos alimenticios, no medicamentos) + por que la infraccion es un error
 
 [2/N]
-[texto copiable directo — max 300 chars — con IDs de competidores]
+Argumento fuerte: error del sistema automatizado, producto legal, no prohibido
 
 [3/N]
-[texto copiable directo — max 300 chars — cierre profesional]
+Competencia como evidencia final: IDs de vendedores internacionales activos vendiendo lo mismo sin restricciones
 ```
+
+Orden OBLIGATORIO:
+1. PRIMERO nuestras publicaciones y argumento principal
+2. DESPUES la competencia como evidencia de soporte
+3. Sin saludo (el asesor Dropux ya saludo antes de pegar los mensajes)
+4. Sin "gracias" ni cierres innecesarios, solo hechos
 
 REGLAS:
 - SIEMPRE este formato exacto, sin variaciones
