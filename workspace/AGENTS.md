@@ -124,48 +124,51 @@ Cuando el asesor dice "dame APL-BR-001" o "empiezo con el primero":
 1. Ejecuta el curl de busqueda de competidores CBT para ese producto y pais especifico
 2. Ejecuta el curl del item en la API de ML para obtener detalles
 3. Usa Playwright local para buscar en ANVISA/INVIMA si el producto esta prohibido
-4. Con toda la evidencia REAL recopilada, entrega el caso usando SIEMPRE este formato exacto:
+4. Con toda la evidencia REAL recopilada, entrega el caso en DOS secciones separadas:
 
+SECCION 1 — PARA EL EQUIPO (verificacion interna, NO se envia a ML):
 ```
 ══════════════════════════════
-CASO: APL-XX-NNN
-PAIS: [pais]
-STORE: [store_id] — [nombre store]
-PUBLICACIONES: [cantidad]
+CASO: APL-XX-NNN | [pais] | Store [id] [nombre]
 ══════════════════════════════
 
-📦 Publicaciones a apelar:
-• [ml_item_id] — [titulo corto]
-• [ml_item_id] — [titulo corto]
+Publicaciones afectadas:
+• [ml_item_id] — [titulo]
+• [ml_item_id] — [titulo]
 
-🔍 Competidores CBT activos:
-• [titulo] — [URL completa del competidor]
-• [titulo] — [URL completa del competidor]
+Competidores CBT encontrados (verificar antes de enviar):
+• [titulo] — [URL completa]
+• [titulo] — [URL completa]
+══════════════════════════════
+```
 
-📋 Mensajes para copiar y pegar en ML:
-(cada mensaje de MAXIMO 300 caracteres)
+SECCION 2 — MENSAJES PARA ML (copiar y pegar directo al chat de ML):
+Cada mensaje es independiente, maximo 300 caracteres, el asesor los envia uno tras otro.
+Deben incluir: IDs de nuestras publicaciones, IDs de competidores, argumentos fuertes.
+Links de entes regulatorios (ANVISA, INVIMA) SI se pueden incluir.
+Links de competidores NO se incluyen (solo IDs).
 
+```
 [1/N]
-[texto del mensaje 1]
+[texto copiable directo — max 300 chars — con IDs y argumento]
 
 [2/N]
-[texto del mensaje 2]
+[texto copiable directo — max 300 chars — con IDs de competidores]
 
 [3/N]
-[texto del mensaje 3]
-
-══════════════════════════════
-Abre el ticket en ML y dame el numero de caso.
-══════════════════════════════
+[texto copiable directo — max 300 chars — cierre profesional]
 ```
 
-REGLAS del formato:
-- SIEMPRE usar este formato exacto, sin variaciones
-- Los mensajes para ML deben estar en ESPANOL
-- Cada mensaje MAXIMO 300 caracteres (contarlos)
-- Los links de competidores deben ser URLs COMPLETAS y verificadas
-- Las publicaciones a apelar deben listar el ml_item_id real
-- NO agregar explicaciones adicionales fuera del formato
+REGLAS:
+- SIEMPRE este formato exacto, sin variaciones
+- Mensajes en ESPANOL
+- Cada mensaje MAXIMO 300 caracteres (contar estrictamente)
+- Cada mensaje debe poder copiarse y pegarse directo en ML sin editar
+- IDs de nuestras publicaciones afectadas en el primer mensaje
+- IDs de competidores como evidencia en segundo mensaje
+- Argumento fuerte en cada mensaje, no relleno
+- Links de regulacion (ANVISA/INVIMA) si se incluyen en los mensajes
+- Links de competidores solo en la seccion del equipo, NO en los mensajes para ML
 
 ### El asesor abre el ticket y reporta
 
