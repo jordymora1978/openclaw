@@ -311,23 +311,84 @@ SIEMPRE usa la API de ML directo para tener datos frescos. Supabase puede estar 
 curl -s 'https://www.amazon.com/dp/ASIN' # o usar Playwright si necesitas mas detalle
 ```
 
-### 2. Buscar competidores CBT en el mismo pais
-```bash
-# Brasil
-curl -s 'https://api.mercadolibre.com.br/sites/MLB/search?q=NOMBRE_PRODUCTO&seller_type=cross_border&limit=10'
-# Colombia
-curl -s 'https://api.mercadolibre.com.co/sites/MCO/search?q=NOMBRE_PRODUCTO&seller_type=cross_border&limit=10'
-```
+### 2. Buscar competidores en ML del mismo pais
 
-### 3. Verificar en ente regulatorio
-Usa Playwright local para abrir ANVISA, INVIMA, etc:
+IMPORTANTE: La API REST de ML y Playwright local NO funcionan desde Railway (IPs bloqueadas).
+Usar BROWSERBASE con proxy del pais correspondiente:
+
 ```bash
 PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright node -e "
 const {chromium} = require('/app/node_modules/playwright-core');
 (async()=>{
-  const b = await chromium.launch({headless:true, args:['--no-sandbox','--disable-dev-shm-usage']});
-  const p = await b.newPage();
-  await p.goto('https://anvisa.gov.br/busca?q=PRODUCTO', {waitUntil:'domcontentloaded',timeout:15000});
+  // Crear sesion Browserbase con proxy del pais
+  const sess = await fetch('https://api.browserbase.com/v1/sessions', {
+    method: 'POST',
+    headers: {'x-bb-api-key': process.env.BROWSERBASE_API_KEY, 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      projectId: process.env.BROWSERBASE_PROJECT_ID,
+      region: 'us-east-1',
+      proxies: [{type:'browserbase',geolocation:{country:'CODIGO_PAIS'}}],
+    }),
+  }).then(r=>r.json());
+
+  const b = await chromium.connectOverCDP(sess.connectUrl);
+  const ctx = b.contexts()[0];
+  const p = ctx.pages()[0] || await ctx.newPage();
+
+  // Buscar en ML del pais (cambiar URL segun pais)
+  await p.goto('https://lista.mercadolivre.com.br/BUSQUEDA', {waitUntil:'domcontentloaded',timeout:15000});
+  await p.waitForTimeout(4000);
+
+  // Extraer resultados
+  const items = await p.evaluate(() => {
+    const results = [];
+    const seen = new Set();
+    document.querySelectorAll('a[href*=\"mercadolivre.com.br/\"], a[href*=\"mercadolibre.com\"]').forEach(a => {
+      if (a.href.includes('/p/') || a.href.includes('_JM')) {
+        const text = a.textContent.trim();
+        const url = a.href.split('?')[0];
+        if (text.length > 15 && !seen.has(url)) { seen.add(url); results.push({title: text.substring(0,80), url}); }
+      }
+    });
+    return results.slice(0,5);
+  });
+
+  items.forEach((d,i) => console.log((i+1)+'. '+d.title+'\\n   '+d.url));
+  await b.close();
+})()
+" 2>&1
+```
+
+Codigos de pais para proxy: BR (Brasil), CO (Colombia), AR (Argentina), CL (Chile), MX (Mexico)
+
+URLs de busqueda por pais:
+- Brasil: https://lista.mercadolivre.com.br/BUSQUEDA
+- Colombia: https://listado.mercadolibre.com.co/BUSQUEDA
+- Argentina: https://listado.mercadolibre.com.ar/BUSQUEDA
+- Mexico: https://listado.mercadolibre.com.mx/BUSQUEDA
+- Chile: https://listado.mercadolibre.cl/BUSQUEDA
+
+### 3. Verificar en ente regulatorio
+
+Usar Browserbase con proxy del pais para acceder a sitios de regulacion:
+```bash
+PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright node -e "
+const {chromium} = require('/app/node_modules/playwright-core');
+(async()=>{
+  const sess = await fetch('https://api.browserbase.com/v1/sessions', {
+    method: 'POST',
+    headers: {'x-bb-api-key': process.env.BROWSERBASE_API_KEY, 'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      projectId: process.env.BROWSERBASE_PROJECT_ID,
+      region: 'us-east-1',
+    }),
+  }).then(r=>r.json());
+
+  const b = await chromium.connectOverCDP(sess.connectUrl);
+  const ctx = b.contexts()[0];
+  const p = ctx.pages()[0] || await ctx.newPage();
+
+  await p.goto('URL_ENTE_REGULATORIO', {waitUntil:'domcontentloaded',timeout:15000});
   await p.waitForTimeout(2000);
   const text = await p.innerText('body');
   console.log(text.substring(0,5000));
