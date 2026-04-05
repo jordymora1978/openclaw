@@ -210,6 +210,64 @@ Si el asesor hizo menos casos de los disponibles:
 "Hoy completamos 2 de 5 apelaciones. Mañana hay que hacer las 3 pendientes.
 APL-CO-001, APL-MX-001, APL-AR-001 siguen listos."
 
+## ESTRATEGIA DE APELACION — PLAYBOOK OFICIAL
+
+### FASE 1: Apelar publicaciones individuales (productos prohibidos)
+
+1. Abrir un caso en ML solicitando el listado de publicaciones con infraccion en el historial
+2. IMPORTANTE: pedir que aclaren el MOTIVO de cada infraccion por separado
+   - NO dejar que mezclen productos prohibidos con propiedad intelectual
+   - Las suspensiones NO juntan un motivo con otro
+3. Con el listado claro, empezar a apelar publicaciones
+4. Apelar en grupos de 5-8 publicaciones por consulta, no todas juntas
+   - Probar primero individual para ver la calidad de respuesta
+   - Luego en bloques de 5-8 donde dan respuestas mas completas
+5. Cada apelacion debe tener evidencia real (competidores, regulaciones, links)
+
+### FASE 2: Verificar reactivacion automatica
+
+Despues de ganar varias apelaciones:
+
+1. Verificar si la cuenta se reactivo AUTOMATICAMENTE
+   - La plataforma de ML es la que suspende o activa, no siempre lo hace una persona
+   - Las suspensiones NO ocurren por cantidad de infracciones, sino por cantidad de SUSPENSIONES TEMPORALES acumuladas
+   - Si se eliminaron infracciones que causaron suspensiones temporales, el sistema puede reactivar solo
+
+2. Si NO se reactivo automaticamente:
+   - Enviar consultas pidiendo que aclaren el motivo REAL de la suspension
+   - Esto es para verificar que productos influyeron y por que motivo
+   - Puede que apelaste exitosamente propiedad intelectual pero la suspension fue por productos prohibidos (o viceversa)
+
+### FASE 3: Solicitar activacion manual
+
+Si despues de apelar exitosamente y la cuenta sigue suspendida:
+
+1. Enviar mensaje de activacion manual que incluya:
+   - Cuantas publicaciones influyeron en la suspension
+   - Que eran infracciones ERRONEAS corroboradas con asesores de ML
+   - Cuantas se eliminaron exitosamente
+   - En que CASOS (numeros de consulta) se eliminaron — no los IDs de publicaciones, solo los casos
+   
+2. El argumento central es:
+   "La suspension fue producto de un ERROR de la plataforma. Las publicaciones que causaron
+   la suspension fueron detectadas automaticamente por error, como se corroboro manualmente
+   con diferentes asesores en los casos [numeros]. El error de deteccion automatica provoco
+   la suspension injusta de la cuenta."
+
+3. NUNCA revelar nombres de asesores especificos — solo decir "fue corroborado con un asesor"
+
+### Tracking de progreso
+
+Para cada pais suspendido, el agente debe trackear:
+- Total de infracciones en el historial
+- Cuantas se han apelado
+- Cuantas se ganaron (infraccion eliminada)
+- Cuantas se perdieron
+- Numeros de caso de ML donde se ganaron apelaciones
+- Si la cuenta se reactivo automaticamente o no
+
+Este tracking se guarda en infraction_cases con el historial_conversacion.
+
 ## Como obtener publicaciones prohibidas
 
 ### Opcion 1: Supabase (datos de la ultima sincronizacion)
