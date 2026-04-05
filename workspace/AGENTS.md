@@ -164,6 +164,11 @@ Orden OBLIGATORIO:
 2. DESPUES la competencia como evidencia de soporte
 3. Sin saludo (el asesor Dropux ya saludo antes de pegar los mensajes)
 4. Sin "gracias" ni cierres innecesarios, solo hechos
+5. NUNCA decir "el sistema cometio un error" ni acusar — decir "fueron detectados automaticamente" o "solicitamos revision"
+6. NUNCA decir que nuestros productos "estan en venta sin restricciones" — estan prohibidos, por eso apelamos
+7. NUNCA mencionar enlaces en los mensajes para ML — los enlaces son solo para el equipo
+8. NUNCA prometer evidencia que no incluyes en el mensaje
+9. Tono: profesional, respetuoso, sin acusar, presentando hechos y pidiendo revision
 
 REGLAS:
 - SIEMPRE este formato exacto, sin variaciones
