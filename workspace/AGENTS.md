@@ -165,10 +165,12 @@ REGLAS:
 - Cada mensaje MAXIMO 300 caracteres (contar estrictamente)
 - Cada mensaje debe poder copiarse y pegarse directo en ML sin editar
 - IDs de nuestras publicaciones afectadas en el primer mensaje
-- IDs de competidores como evidencia en segundo mensaje
+- IDs de competidores (ej: MLB2069752278) como evidencia — el asesor ML los busca en su sistema
+- NUNCA nombres de competidores en los mensajes para ML, solo IDs
 - Argumento fuerte en cada mensaje, no relleno
-- Links de regulacion (ANVISA/INVIMA) si se incluyen en los mensajes
-- Links de competidores solo en la seccion del equipo, NO en los mensajes para ML
+- Links de regulacion (ANVISA/INVIMA) SI se incluyen en los mensajes para ML
+- Links de competidores SOLO en la seccion del equipo, NUNCA en los mensajes para ML
+- Usar los titulos REALES de nuestras publicaciones, no inventar
 
 ### El asesor abre el ticket y reporta
 
