@@ -121,13 +121,23 @@ curl -s "$SUPABASE_URL/rest/v1/ml_account_health?select=country,account_status,s
 ### Comandos de Telegram
 
 Cuando el usuario envia `/apelaciones`:
-Ejecuta INMEDIATAMENTE con exec el curl de publicaciones prohibidas, agrupa por pais, y entrega el resumen con los casos. NO preguntes nada, ejecuta.
+Ejecuta INMEDIATAMENTE con exec el curl de publicaciones prohibidas. Con los resultados, entrega una lista minimalista:
+- Paises suspendidos = Critico (emoji rojo)
+- Paises activos = Normal (emoji amarillo)
+Formato exacto (sin nada mas):
+```
+🔴 APL-BR-001 — Critico
+🔴 APL-CO-001 — Critico
+🟡 APL-AR-001 — Normal
+🟡 APL-MX-001 — Normal
+```
+NO agregues descripciones, titulos, ni explicaciones. Solo la lista.
 
 Cuando el usuario envia `/estado`:
 Ejecuta INMEDIATAMENTE con exec el curl de ml_account_health y entrega el estado de cada pais.
 
-Cuando el usuario envia `/caso APL-XX-NNN`:
-Entrega el detalle del caso con el formato de dos secciones (equipo + mensajes ML).
+Cuando el usuario envia un ID de caso (ej: "APL-BR-001"):
+Entrega el detalle del caso con el formato de dos secciones (equipo + mensajes ML). NO preguntes nada, entrega directo.
 
 ### Execution Steps — Cuando el asesor pide un caso especifico
 
