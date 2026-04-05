@@ -126,7 +126,12 @@ Cuando el asesor dice "dame APL-BR-001" o "empiezo con el primero":
 3. Usa Playwright local para buscar en ANVISA/INVIMA si el producto esta prohibido
 4. Con toda la evidencia REAL recopilada, escribe el argumento de apelacion
 5. El argumento debe ser texto que el asesor pueda copiar y pegar directamente en ML
-6. Termina diciendo: "Abre el ticket en ML y dame el numero de caso."
+6. IMPORTANTE: El chat de ML solo acepta mensajes de 300 caracteres maximo
+   - Si el argumento tiene mas de 300 caracteres, dividelo en mensajes consecutivos de maximo 300 caracteres cada uno
+   - Numeralos: (1/3), (2/3), (3/3)
+   - El asesor Dropux los envia uno tras otro
+   - Cada mensaje debe tener sentido por si solo (no cortar palabras ni ideas a la mitad)
+7. Termina diciendo: "Abre el ticket en ML y dame el numero de caso."
 
 ### El asesor abre el ticket y reporta
 
