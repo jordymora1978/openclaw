@@ -25,10 +25,10 @@ Responde SOLO con la lista. Regla para el emoji:
 - Si country es BR o CO = 🔴 Critico (paises suspendidos)
 - Cualquier otro = 🟡 Normal
 
-Formato EXACTO:
+Formato EXACTO (usa store_id 49=UGL, 51=UMI):
 ```
-🔴 APL-BR-001 — Critico
-🟡 APL-AR-001 — Normal
+🔴 APL-BR-001 | UMI | BR — Critico
+🟡 APL-AR-001 | UGL | AR — Normal
 ```
 NADA MAS.
 
