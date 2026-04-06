@@ -89,10 +89,10 @@ setTimeout(() => {
   setInterval(() => runScript('extract-context.js'), INTERVAL_MS);
 }, 30*60*1000);
 
-// Run competitor search 1h after scraper + every 6h
+// Run per-publication competitor search 1h after scraper + every 6h
 setTimeout(() => {
-  runScript('find-competitors.js');
-  setInterval(() => runScript('find-competitors.js'), INTERVAL_MS);
+  runScript('find-pub-competitors.js');
+  setInterval(() => runScript('find-pub-competitors.js'), INTERVAL_MS);
 }, 60*60*1000);
 
 // Health check

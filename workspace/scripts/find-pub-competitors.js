@@ -140,6 +140,7 @@ async function searchAndVerify(page, country, searchTerm) {
           headers: { 'x-bb-api-key': BB_KEY, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             projectId: BB_PROJECT, region: 'us-east-1',
+            timeout: 7200, keepAlive: true,
             proxies: [{ type: 'browserbase', geolocation: { country } }],
           }),
         });
@@ -170,7 +171,29 @@ async function searchAndVerify(page, country, searchTerm) {
 
         try {
           log('info', 'searching', { pub: pub.ml_item_id, term: searchTerm, country });
-          const competitors = await searchAndVerify(page, country, searchTerm);
+          let competitors;
+          try {
+            competitors = await searchAndVerify(page, country, searchTerm);
+          } catch (sessErr) {
+            if (sessErr.message.includes('browser has been closed') || sessErr.message.includes('Target page')) {
+              log('warn', 'session_reconnecting', { pub: pub.ml_item_id, country });
+              try { await browser.close(); } catch {}
+              const newSess = await fetch('https://api.browserbase.com/v1/sessions', {
+                method: 'POST',
+                headers: { 'x-bb-api-key': BB_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  projectId: BB_PROJECT, region: 'us-east-1',
+                  timeout: 7200, keepAlive: true,
+                  proxies: [{ type: 'browserbase', geolocation: { country } }],
+                }),
+              }).then(r => r.json());
+              browser = await chromium.connectOverCDP(newSess.connectUrl);
+              const newCtx = browser.contexts()[0];
+              page = newCtx.pages()[0] || await newCtx.newPage();
+              log('info', 'session_reconnected', { country });
+              competitors = await searchAndVerify(page, country, searchTerm);
+            } else { throw sessErr; }
+          }
 
           if (competitors.length > 0) {
             // Save to publication_history
