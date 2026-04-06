@@ -80,61 +80,55 @@ async function searchCompetitors(country, searchTerm) {
     // Find all product cards/items
     const cards = document.querySelectorAll('.ui-search-layout__item, .poly-card, [class*="search-result"]');
 
-    // Check each card for "Envío desde" origin
-    if (cards.length > 0) {
-      cards.forEach(card => {
-        const cardText = card.textContent || '';
-        // Only accept USA sellers
-        const isUSA = cardText.includes('Envío desde USA') ||
-          cardText.includes('Envío desde Estados Unidos') ||
-          cardText.includes('Envío desde EE.UU') ||
-          cardText.includes('Envio desde USA') ||
-          cardText.includes('Ships from USA') ||
-          cardText.includes('Ships from United States');
-
-        if (isUSA) {
-          const link = card.querySelector('a[href*="/p/"], a[href*="_JM"]');
-          if (link) {
-            const href = link.href.split('?')[0].split('#')[0];
-            const text = link.textContent.trim();
-            if (text.length > 10 && !seen.has(href)) {
-              seen.add(href);
-              const match = href.match(/(MLB|MCO|MLA|MLC|MLM)\d+/);
-              results.push({ title: text.substring(0, 80), url: href, id: match ? match[0] : '', origin: 'USA' });
-            }
-          }
+    // Collect ALL international results — will verify origin by opening each page
+    document.querySelectorAll('a').forEach(a => {
+      if ((a.href.includes('/p/') || a.href.includes('_JM')) && a.href.includes('mercadoli')) {
+        const text = a.textContent.trim();
+        const href = a.href.split('?')[0].split('#')[0];
+        if (text.length > 15 && !seen.has(href)) {
+          seen.add(href);
+          const match = href.match(/(MLB|MCO|MLA|MLC|MLM)\d+/);
+          results.push({ title: text.substring(0, 80), url: href, id: match ? match[0] : '' });
         }
-      });
-    }
-
-    // Fallback: check all links with parent context
-    if (results.length === 0) {
-      document.querySelectorAll('a').forEach(a => {
-        if ((a.href.includes('/p/') || a.href.includes('_JM')) && a.href.includes('mercadoli')) {
-          const text = a.textContent.trim();
-          const href = a.href.split('?')[0].split('#')[0];
-          const parent = a.closest('[class*="item"], [class*="card"], [class*="result"], [class*="poly"]') || a.parentElement?.parentElement?.parentElement;
-          const parentText = parent ? parent.textContent : '';
-
-          const isUSA = parentText.includes('Envío desde USA') ||
-            parentText.includes('Envío desde Estados Unidos') ||
-            parentText.includes('Envío desde EE.UU') ||
-            parentText.includes('Ships from USA');
-
-          if (text.length > 15 && !seen.has(href) && isUSA) {
-            seen.add(href);
-            const match = href.match(/(MLB|MCO|MLA|MLC|MLM)\d+/);
-            results.push({ title: text.substring(0, 80), url: href, id: match ? match[0] : '', origin: 'USA' });
-          }
-        }
-      });
-    }
+      }
+    });
 
     return results.slice(0, 5);
   });
 
+  // Verify each result — open product page and check "Envío desde"
+  const verified = [];
+  for (const item of items) {
+    if (!item.url || verified.length >= 5) break;
+    try {
+      await p.goto(item.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await p.waitForTimeout(2000);
+      const pageText = await p.innerText('body');
+
+      let origin = 'unknown';
+      if (pageText.includes('Envío desde USA') || pageText.includes('Envío desde Estados Unidos') || pageText.includes('Envío desde EE.UU')) {
+        origin = 'USA';
+      } else if (pageText.includes('Envío desde China')) {
+        origin = 'China';
+      } else if (pageText.includes('Envío desde')) {
+        const match = pageText.match(/Envío desde\s+([^\n,]+)/);
+        origin = match ? match[1].trim() : 'otro';
+      }
+
+      item.origin = origin;
+      if (origin === 'USA') {
+        verified.push(item);
+        console.log(`  ✅ USA: ${item.id} | ${item.title}`);
+      } else {
+        console.log(`  ❌ ${origin}: ${item.id} | ${item.title} — descartado`);
+      }
+    } catch (e) {
+      console.log(`  ⚠️ Error verificando ${item.id}: ${e.message.split('\n')[0]}`);
+    }
+  }
+
   await b.close();
-  return items;
+  return verified;
 }
 
 (async () => {
