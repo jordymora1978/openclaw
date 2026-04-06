@@ -53,6 +53,40 @@ chown -R node:node "$DEST"
 export OPENCLAW_STATE_DIR="$DEST"
 export OPENCLAW_CONFIG_PATH="$DEST/config.json"
 
-# Drop to node user for the gateway
-echo "[entrypoint] Starting gateway as node (state=$DEST)"
-exec su -s /bin/bash node -c "OPENCLAW_STATE_DIR=$DEST OPENCLAW_CONFIG_PATH=$DEST/config.json exec node /app/openclaw.mjs gateway --allow-unconfigured --bind lan"
+# Setup system cron for scraper (no LLM, no tokens, no OpenClaw)
+echo "[entrypoint] Setting up system cron..."
+CRON_LOG="$DEST/scrape-cron.log"
+
+# Write crontab for node user
+cat > /tmp/scraper-cron << CRONEOF
+# Scrape ML inquiries every 6 hours (0:00, 6:00, 12:00, 18:00 Colombia = 5,11,17,23 UTC)
+0 5,11,17,23 * * * PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright BB_CONTEXT_49=${BB_CONTEXT_49} SUPABASE_URL=${SUPABASE_URL} SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY} SUPABASE_CATALOG_URL=${SUPABASE_CATALOG_URL} SUPABASE_CATALOG_ANON_KEY=${SUPABASE_CATALOG_ANON_KEY} BROWSERBASE_API_KEY=${BROWSERBASE_API_KEY} BROWSERBASE_PROJECT_ID=${BROWSERBASE_PROJECT_ID} /usr/local/bin/node ${DEST}/workspace/scripts/scrape-all.js >> ${CRON_LOG} 2>&1
+
+# Find competitors for pending cases every 6 hours (offset 1h from scraper)
+0 6,12,18,0 * * * PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright BB_CONTEXT_49=${BB_CONTEXT_49} SUPABASE_URL=${SUPABASE_URL} SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY} SUPABASE_CATALOG_URL=${SUPABASE_CATALOG_URL} SUPABASE_CATALOG_ANON_KEY=${SUPABASE_CATALOG_ANON_KEY} BROWSERBASE_API_KEY=${BROWSERBASE_API_KEY} BROWSERBASE_PROJECT_ID=${BROWSERBASE_PROJECT_ID} /usr/local/bin/node ${DEST}/workspace/scripts/find-competitors.js >> ${DEST}/competitors-cron.log 2>&1
+CRONEOF
+
+crontab -u node /tmp/scraper-cron 2>/dev/null || crontab /tmp/scraper-cron 2>/dev/null || true
+rm -f /tmp/scraper-cron
+
+# Start cron daemon in background
+crond 2>/dev/null || cron 2>/dev/null || echo "[entrypoint] WARNING: cron daemon not available"
+echo "[entrypoint] System cron configured"
+
+# Health check server (keeps container alive on Railway)
+echo "[entrypoint] Starting health check server..."
+exec su -s /bin/bash node -c "node -e \"
+const http = require('http');
+const server = http.createServer((req, res) => {
+  if (req.url === '/healthz' || req.url === '/health') {
+    res.writeHead(200, {'Content-Type':'application/json'});
+    res.end(JSON.stringify({status:'ok',service:'dropux-scraper'}));
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+server.listen(process.env.PORT || 8080, '0.0.0.0', () => {
+  console.log('[health] listening on port ' + (process.env.PORT || 8080));
+});
+\""
