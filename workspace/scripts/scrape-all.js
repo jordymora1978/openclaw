@@ -177,7 +177,9 @@ async function connectAndVerify(sess) {
   // Summary
   const elapsed = Date.now() - startTime;
   const totalFound = allStats.reduce((s, c) => s + (c.inquiries_found || 0), 0);
-  const totalSaved = allStats.reduce((s, c) => s + (c.inquiries_saved || 0), 0);
+  const totalNew = allStats.reduce((s, c) => s + (c.inquiries_new || 0), 0);
+  const totalUpdated = allStats.reduce((s, c) => s + (c.inquiries_updated || 0), 0);
+  const totalUnchanged = allStats.reduce((s, c) => s + (c.inquiries_unchanged || 0), 0);
   const totalConv = allStats.reduce((s, c) => s + (c.inquiries_with_conversation || 0), 0);
   const totalFailed = allStats.reduce((s, c) => s + (c.failed_inquiries || []).length, 0);
   const status = countriesFail.length === 0 ? 'success' : countriesOk.length === 0 ? 'error' : 'partial';
@@ -185,8 +187,12 @@ async function connectAndVerify(sess) {
   log('info', 'scrape_done', {
     status, duration_ms: elapsed, sessions_used: sessionCount,
     countries_ok: countriesOk, countries_fail: countriesFail,
-    total_found: totalFound, total_saved: totalSaved,
-    total_with_conversation: totalConv, total_failed: totalFailed,
+    total_found: totalFound,
+    total_new: totalNew,
+    total_updated: totalUpdated,
+    total_unchanged: totalUnchanged,
+    total_with_conversation: totalConv,
+    total_failed: totalFailed,
     errors: allErrors,
   });
 
@@ -201,7 +207,8 @@ async function connectAndVerify(sess) {
       body: JSON.stringify({
         scrape_type: 'inquiries', store_id: STORE_ID,
         countries_scraped: countriesOk, countries_failed: countriesFail,
-        new_inquiries: totalSaved, total_inquiries: totalFound,
+        new_inquiries: totalNew, updated_inquiries: totalUpdated,
+        total_inquiries: totalFound,
         errors: allErrors, duration_ms: elapsed, status,
       }),
     });

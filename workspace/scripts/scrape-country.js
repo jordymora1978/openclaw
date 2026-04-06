@@ -80,11 +80,31 @@ async function scrapeCountry(p, country, storeId) {
   const code = COUNTRY_CODES[country];
   if (!code) throw new Error(`Unknown country: ${country}`);
 
+  // Get existing inquiries for this country to detect new vs updated
+  let existingInquiries = {};
+  try {
+    const existResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/ml_support_inquiries?select=inquiry_number,inquiry_status,conversation_text&store_id=eq.${storeId}&country=eq.${code}`,
+      { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+    );
+    const existData = await existResp.json();
+    for (const e of (existData || [])) {
+      existingInquiries[e.inquiry_number] = {
+        status: e.inquiry_status,
+        conv_length: (e.conversation_text || '').length,
+      };
+    }
+  } catch (e) {
+    log('warn', 'existing_fetch_failed', { country, error: e.message });
+  }
+
   const stats = {
     country: code,
     store_id: storeId,
     inquiries_found: 0,
-    inquiries_saved: 0,
+    inquiries_new: 0,
+    inquiries_updated: 0,
+    inquiries_unchanged: 0,
     inquiries_with_conversation: 0,
     errors: [],
     failed_inquiries: [],
@@ -219,7 +239,20 @@ async function scrapeCountry(p, country, storeId) {
         stats.failed_inquiries.push({ inquiry: inquiryNumber, reason: 'conversation_failed', error: e.message.split('\n')[0] });
       }
 
-      // ── Save to Supabase ──
+      // ── Classify: new / updated / unchanged ──
+      const existing = existingInquiries[inquiryNumber];
+      let changeType = 'new';
+      if (existing) {
+        const statusChanged = existing.status !== inquiryStatus;
+        const convChanged = Math.abs(existing.conv_length - conversationText.length) > 10;
+        if (statusChanged || convChanged) {
+          changeType = 'updated';
+        } else {
+          changeType = 'unchanged';
+        }
+      }
+
+      // ── Save to Supabase (always upsert to update scraped_at) ──
       await supabaseUpsert('ml_support_inquiries', {
         store_id: storeId, country: code,
         inquiry_number: inquiryNumber,
@@ -230,12 +263,15 @@ async function scrapeCountry(p, country, storeId) {
       });
 
       const elapsed = Date.now() - inquiryStart;
-      stats.inquiries_saved++;
+      if (changeType === 'new') stats.inquiries_new++;
+      else if (changeType === 'updated') stats.inquiries_updated++;
+      else stats.inquiries_unchanged++;
       if (conversationText) stats.inquiries_with_conversation++;
       consecutiveFailures = 0;
 
       log('info', 'inquiry_saved', {
         country, inquiry: inquiryNumber, status: inquiryStatus,
+        change: changeType,
         has_conversation: !!conversationText,
         conversation_length: conversationText.length,
         duration_ms: elapsed,
