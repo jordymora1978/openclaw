@@ -61,22 +61,27 @@ const {execSync, spawn} = require('child_process');
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const SCRIPTS_DIR = '/data/.openclaw/workspace/scripts';
 
-function runScript(name) {
-  console.log(JSON.stringify({ts:new Date().toISOString(),level:'info',action:'cron_start',script:name}));
-  const child = spawn('node', [SCRIPTS_DIR+'/'+name], {
+function runScript(name, args) {
+  const label = args ? name+' '+args.join(' ') : name;
+  console.log(JSON.stringify({ts:new Date().toISOString(),level:'info',action:'cron_start',script:label}));
+  const child = spawn('node', [SCRIPTS_DIR+'/'+name, ...(args||[])], {
     env: {...process.env, PLAYWRIGHT_BROWSERS_PATH:'/home/node/.cache/ms-playwright'},
     stdio: ['ignore','pipe','pipe'],
   });
   child.stdout.on('data', d => process.stdout.write(d));
   child.stderr.on('data', d => process.stderr.write(d));
   child.on('close', code => {
-    console.log(JSON.stringify({ts:new Date().toISOString(),level:code===0?'info':'error',action:'cron_done',script:name,exitCode:code}));
+    console.log(JSON.stringify({ts:new Date().toISOString(),level:code===0?'info':'error',action:'cron_done',script:label,exitCode:code}));
   });
 }
 
-// Run scraper on startup + every 6h
-runScript('scrape-all.js');
-setInterval(() => runScript('scrape-all.js'), INTERVAL_MS);
+// Run scrapers in PARALLEL — each store independent
+function runScrapers() {
+  if (process.env.BB_CONTEXT_49) runScript('scrape-store.js', ['49']);
+  if (process.env.BB_CONTEXT_51) runScript('scrape-store.js', ['51']);
+}
+runScrapers();
+setInterval(runScrapers, INTERVAL_MS);
 
 // Extract context from conversations 30min after scraper + every 6h
 setTimeout(() => {
