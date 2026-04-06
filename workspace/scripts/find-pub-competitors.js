@@ -109,10 +109,11 @@ async function searchAndVerify(page, country, searchTerm) {
 
 (async () => {
   const storeFilter = process.argv[2] ? parseInt(process.argv[2]) : null;
+  // No need for BB_CONTEXT — competitor search uses anonymous sessions with country proxy
   const stores = [
-    { id: 49, context: process.env.BB_CONTEXT_49 },
-    { id: 51, context: process.env.BB_CONTEXT_51 },
-  ].filter(s => s.context && (!storeFilter || s.id === storeFilter));
+    { id: 49 },
+    { id: 51 },
+  ].filter(s => !storeFilter || s.id === storeFilter);
 
   log('info', 'start', { stores: stores.map(s => s.id) });
 
