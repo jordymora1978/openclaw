@@ -1,12 +1,12 @@
 /**
  * Scraper para UN SOLO país de ML Global Selling
  *
- * Standalone:
- *   PLAYWRIGHT_BROWSERS_PATH=/home/node/.cache/ms-playwright \
- *   node /data/.openclaw/workspace/scripts/scrape-country.js Chile 2>&1
- *
- * Requires BB_CONTEXT_49 env var (created by setup-context.js).
- * Also usable as module: require('./scrape-country.js').scrapeCountry(page, 'Chile', 49)
+ * Estándares profesionales:
+ * - Retry con backoff exponencial (3 intentos, 2s/4s/8s)
+ * - Logging estructurado con timestamps
+ * - Circuit breaker (3 fallos seguidos = para)
+ * - Idempotente (upsert, no duplica)
+ * - Dead letter (inquiries fallidos quedan registrados)
  */
 const { chromium } = require('/app/node_modules/playwright-core');
 
@@ -19,6 +19,39 @@ const UPSERT_KEYS = {
   ml_account_health: 'store_id,country,scraped_date',
 };
 
+// ── Structured Logger ──
+function log(level, action, data = {}) {
+  const entry = {
+    ts: new Date().toISOString(),
+    level,
+    action,
+    ...data,
+  };
+  console.log(JSON.stringify(entry));
+}
+
+// ── Retry with exponential backoff ──
+async function withRetry(fn, label, maxAttempts = 3) {
+  const delays = [2000, 4000, 8000];
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const isLast = attempt === maxAttempts;
+      log(isLast ? 'error' : 'warn', 'retry', {
+        label,
+        attempt,
+        maxAttempts,
+        error: e.message.split('\n')[0],
+        willRetry: !isLast,
+      });
+      if (isLast) throw e;
+      await new Promise(r => setTimeout(r, delays[attempt - 1]));
+    }
+  }
+}
+
+// ── Supabase upsert ──
 async function supabaseUpsert(table, data) {
   const onConflict = UPSERT_KEYS[table] || '';
   const qs = onConflict ? `?on_conflict=${onConflict}` : '';
@@ -32,35 +65,50 @@ async function supabaseUpsert(table, data) {
     },
     body: JSON.stringify(data),
   });
-  if (!resp.ok) console.error(`[DB] Error ${table}: ${await resp.text()}`);
+  if (!resp.ok) {
+    const err = await resp.text();
+    log('error', 'supabase_upsert_fail', { table, error: err });
+  }
   return resp.ok;
 }
 
 /**
- * Scrape a single country. Expects page already logged in to ML Global Selling.
- * @param {import('playwright-core').Page} p - Playwright page (already authenticated)
- * @param {string} country - Country name: Mexico, Brazil, Argentina, Chile, Colombia
- * @param {number} storeId - Store ID (49 or 51)
+ * Scrape a single country.
+ * @returns {object} stats — { inquiries_found, inquiries_saved, inquiries_with_conversation, errors, failed_inquiries }
  */
 async function scrapeCountry(p, country, storeId) {
   const code = COUNTRY_CODES[country];
   if (!code) throw new Error(`Unknown country: ${country}`);
 
-  console.log(`\n=== Scrape ${country} (Store ${storeId}) ===`);
+  const stats = {
+    country: code,
+    store_id: storeId,
+    inquiries_found: 0,
+    inquiries_saved: 0,
+    inquiries_with_conversation: 0,
+    errors: [],
+    failed_inquiries: [],
+    account_status: null,
+    started_at: new Date().toISOString(),
+    finished_at: null,
+  };
 
-  // Switch country via /help/v2
-  console.log(`[SWITCH] ${country}...`);
-  await p.goto('https://global-selling.mercadolibre.com/help/v2', { waitUntil: 'domcontentloaded', timeout: 20000 });
-  await p.waitForTimeout(3000);
-  await p.locator('.nav-header-cbt__site-switcher-trigger').first().click({ timeout: 8000 });
-  await p.waitForTimeout(2000);
-  await p.getByText(country, { exact: true }).first().click({ timeout: 8000 });
-  await p.waitForTimeout(4000);
+  // ── Switch country ──
+  log('info', 'switch_country', { country, code });
+  await withRetry(async () => {
+    await p.goto('https://global-selling.mercadolibre.com/help/v2', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await p.waitForTimeout(3000);
+    await p.locator('.nav-header-cbt__site-switcher-trigger').first().click({ timeout: 8000 });
+    await p.waitForTimeout(2000);
+    await p.getByText(country, { exact: true }).first().click({ timeout: 8000 });
+    await p.waitForTimeout(4000);
+  }, `switch_${country}`);
+
   const headerVal = await p.locator('.nav-header-cbt__site-switcher-value').first().innerText().catch(() => '?');
-  console.log(`[SWITCH] Header: ${headerVal}`);
+  log('info', 'switch_result', { country, header: headerVal });
 
-  // Read Summary
-  console.log('[SUMMARY]...');
+  // ── Read Summary ──
+  log('info', 'read_summary', { country });
   await p.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await p.waitForTimeout(3000);
   const summaryText = await p.innerText('body');
@@ -76,76 +124,104 @@ async function scrapeCountry(p, country, storeId) {
     const m = summaryText.match(/(We.*?suspended.*?\.)/s);
     statusReason = m ? m[1] : 'suspended';
   }
-  console.log(`[SUMMARY] ${country}: ${accountStatus} — ${statusReason || 'sin problemas'}`);
+  stats.account_status = accountStatus;
+  log('info', 'summary_result', { country, status: accountStatus, reason: statusReason.substring(0, 80) });
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
   await supabaseUpsert('ml_account_health', {
-    store_id: storeId,
-    country: code,
-    account_status: accountStatus,
-    status_reason: statusReason,
+    store_id: storeId, country: code,
+    account_status: accountStatus, status_reason: statusReason,
     scraped_date: today,
   });
 
-  // Read inquiries
-  console.log('[INQUIRIES]...');
+  // ── Read inquiries ──
+  log('info', 'read_inquiries', { country });
   await p.goto('https://global-selling.mercadolibre.com/help/v2', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await p.waitForTimeout(3000);
+  try { await p.getByText('Show all').click({ timeout: 5000 }); await p.waitForTimeout(3000); } catch (e) {}
 
-  try {
-    await p.getByText('Show all').click({ timeout: 5000 });
-    await p.waitForTimeout(3000);
-  } catch (e) {}
-
-  // Collect all hrefs upfront (avoids re-navigation between inquiries)
   const hrefs = await p.locator('a').filter({ hasText: /Go to the inquir|Go to chat/ })
     .evaluateAll(els => els.map(el => el.href).filter(Boolean));
-  console.log(`[INQUIRIES] Found ${hrefs.length} inquiry links`);
+  stats.inquiries_found = hrefs.length;
+  log('info', 'inquiries_found', { country, count: hrefs.length });
+
+  // ── Circuit breaker ──
+  let consecutiveFailures = 0;
+  const MAX_CONSECUTIVE_FAILURES = 3;
 
   for (let i = 0; i < hrefs.length; i++) {
+    if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+      log('error', 'circuit_breaker', {
+        country, after_inquiry: i,
+        reason: `${MAX_CONSECUTIVE_FAILURES} consecutive failures — stopping country`,
+      });
+      stats.errors.push(`Circuit breaker triggered at inquiry ${i + 1}`);
+      break;
+    }
+
+    const inquiryStart = Date.now();
     try {
-      await p.goto(hrefs[i], { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await p.waitForTimeout(3000);
+      // ── Navigate to inquiry with retry ──
+      await withRetry(async () => {
+        await p.goto(hrefs[i], { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await p.waitForTimeout(3000);
+      }, `inquiry_${i + 1}_navigate`);
 
       const qText = await p.innerText('body');
 
+      // ── Extract number ──
       let inquiryNumber = '';
       const numMatch = qText.match(/Number\s*\n?\s*(\d+)/);
       if (numMatch) inquiryNumber = numMatch[1];
       if (!inquiryNumber) {
-        console.log(`  [${i + 1}] No number found, skipping`);
+        log('warn', 'inquiry_no_number', { country, index: i + 1 });
+        stats.failed_inquiries.push({ index: i + 1, reason: 'no_number' });
+        consecutiveFailures++;
         continue;
       }
 
+      // ── Extract date ──
       let inquiryDate = '';
       const dateMatch = qText.match(/Creation date\s*\n?\s*on\s*(.+?\d{4})/);
       if (dateMatch) inquiryDate = dateMatch[1].trim();
 
+      // ── Extract status ──
       let inquiryStatus = 'open';
       if (qText.includes('It ended') || qText.includes('Completed')) inquiryStatus = 'completed';
 
+      // ── Extract summary ──
       let summaryT = '';
       const sumMatch = qText.match(/(?:Summarized by artificial intelligence)\s*\n?\s*(.*?)(?:\n|Review|Details)/s);
       if (sumMatch) summaryT = sumMatch[1].trim();
 
+      // ── Read conversation with retry ──
       let conversationText = '';
       try {
-        const reviewBtn = p.locator('a, button').filter({ hasText: /Review the conversation|Go to chat/ });
-        if (await reviewBtn.count() > 0) {
-          await reviewBtn.first().click();
-          await p.waitForTimeout(5000);
-          const convPage = await p.innerText('body');
-          conversationText = convPage
-            .replace(/^[\s\S]*?Conversation\s*/m, '')
-            .replace(/Resume consultation[\s\S]*$/m, '')
-            .replace(/Investor relations[\s\S]*$/, '')
-            .substring(0, 10000);
-        }
-      } catch (e) {}
+        await withRetry(async () => {
+          const reviewBtn = p.locator('a, button').filter({ hasText: /Review the conversation|Go to chat/ });
+          if (await reviewBtn.count() > 0) {
+            await reviewBtn.first().click();
+            await p.waitForTimeout(5000);
+            const convPage = await p.innerText('body');
+            conversationText = convPage
+              .replace(/^[\s\S]*?Conversation\s*/m, '')
+              .replace(/Resume consultation[\s\S]*$/m, '')
+              .replace(/Investor relations[\s\S]*$/, '')
+              .substring(0, 10000);
+          }
+        }, `inquiry_${inquiryNumber}_conversation`);
+      } catch (e) {
+        log('warn', 'conversation_failed', {
+          country, inquiry: inquiryNumber,
+          error: e.message.split('\n')[0],
+          reason: 'retry_exhausted',
+        });
+        stats.failed_inquiries.push({ inquiry: inquiryNumber, reason: 'conversation_failed', error: e.message.split('\n')[0] });
+      }
 
+      // ── Save to Supabase ──
       await supabaseUpsert('ml_support_inquiries', {
-        store_id: storeId,
-        country: code,
+        store_id: storeId, country: code,
         inquiry_number: inquiryNumber,
         inquiry_date: inquiryDate || null,
         inquiry_status: inquiryStatus,
@@ -153,13 +229,39 @@ async function scrapeCountry(p, country, storeId) {
         conversation_text: conversationText,
       });
 
-      console.log(`  [${i + 1}] #${inquiryNumber} (${inquiryStatus}) — ${summaryT.substring(0, 60) || 'sin resumen'}`);
+      const elapsed = Date.now() - inquiryStart;
+      stats.inquiries_saved++;
+      if (conversationText) stats.inquiries_with_conversation++;
+      consecutiveFailures = 0;
+
+      log('info', 'inquiry_saved', {
+        country, inquiry: inquiryNumber, status: inquiryStatus,
+        has_conversation: !!conversationText,
+        conversation_length: conversationText.length,
+        duration_ms: elapsed,
+      });
+
     } catch (e) {
-      console.error(`  [${i + 1}] Error: ${e.message.split('\n')[0]}`);
+      consecutiveFailures++;
+      const elapsed = Date.now() - inquiryStart;
+      log('error', 'inquiry_failed', {
+        country, index: i + 1,
+        error: e.message.split('\n')[0],
+        consecutive_failures: consecutiveFailures,
+        duration_ms: elapsed,
+      });
+      stats.errors.push(`inquiry ${i + 1}: ${e.message.split('\n')[0]}`);
+      stats.failed_inquiries.push({ index: i + 1, reason: 'exception', error: e.message.split('\n')[0] });
     }
   }
 
-  console.log(`=== Done: ${country} ===`);
+  stats.finished_at = new Date().toISOString();
+  log('info', 'country_done', {
+    country: code,
+    ...stats,
+  });
+
+  return stats;
 }
 
 // Export for use by scrape-all.js
@@ -179,8 +281,8 @@ if (require.main === module) {
   }
 
   (async () => {
-    // Create session with persistent context (no login needed)
-    console.log(`[SESSION] Creating with context ${BB_CONTEXT.substring(0, 8)}...`);
+    log('info', 'standalone_start', { country: COUNTRY, store: STORE_ID });
+
     const sessResp = await fetch('https://api.browserbase.com/v1/sessions', {
       method: 'POST',
       headers: { 'x-bb-api-key': BB_KEY, 'Content-Type': 'application/json' },
@@ -191,28 +293,29 @@ if (require.main === module) {
           solveCaptchas: true,
           context: { id: BB_CONTEXT, persist: true },
         },
+        proxies: true,
       }),
     });
     const sess = await sessResp.json();
-    if (!sess.connectUrl) { console.error('[SESSION] Failed:', JSON.stringify(sess)); process.exit(1); }
-    console.log(`[SESSION] ${sess.id}`);
+    if (!sess.connectUrl) { log('error', 'session_failed', { response: JSON.stringify(sess).substring(0, 200) }); process.exit(1); }
+    log('info', 'session_created', { id: sess.id });
 
     const b = await chromium.connectOverCDP(sess.connectUrl);
     const ctx = b.contexts()[0];
     const p = ctx.pages()[0] || await ctx.newPage();
 
-    // Verify login
     await p.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await p.waitForTimeout(3000);
     const check = await p.innerText('body');
     if (!check.includes('Summary') && !check.includes('Add listings')) {
-      console.error('[AUTH] Not logged in. Run setup-context.js to refresh cookies.');
+      log('error', 'auth_failed', { reason: 'not_logged_in' });
       await b.close();
       process.exit(1);
     }
-    console.log('[AUTH] Logged in via context cookies');
+    log('info', 'auth_ok');
 
-    await scrapeCountry(p, COUNTRY, STORE_ID);
+    const stats = await scrapeCountry(p, COUNTRY, STORE_ID);
     await b.close();
-  })().catch(e => { console.error('FATAL:', e.message); process.exit(1); });
+    log('info', 'standalone_done', stats);
+  })().catch(e => { log('error', 'fatal', { error: e.message }); process.exit(1); });
 }
