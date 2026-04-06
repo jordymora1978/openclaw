@@ -46,26 +46,47 @@ async function extractWithLLM(conversation, inquiryNumber, country) {
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       temperature: 0.1,
-      max_tokens: 800,
+      max_tokens: 1000,
       messages: [
         {
           role: 'system',
           content: `Extraes hechos clave de conversaciones de soporte de MercadoLibre. Responde SOLO en JSON valido, sin texto extra. Formato:
 {
+  "classification": "apelacion|validacion_preventiva|suspension|reclamo|exclusion_demoras|operativo|error_operativo|consulta_general",
+  "advisor_dropux": "nombre del asesor de Dropux que abre el caso (quien escribe, no el de ML)",
+  "advisor_ml": "nombre del asesor de MercadoLibre que responde",
+  "result": "resuelto|rechazado|pendiente|sin_resultado|informativo",
+  "quality_score": "bueno|regular|malo",
+  "quality_reason": "explicacion corta de por que esa calificacion",
+  "general_context": "resumen de 2-3 lineas de lo que se pidio y que respondio ML",
   "publications": [
     {
       "ml_item_id": "MCO1234567",
-      "advisor_said": "texto corto de lo que dijo el asesor sobre esta publicacion",
+      "advisor_said": "texto corto de lo que dijo el asesor ML sobre esta publicacion",
       "reason": "sustancia_prohibida|falso_positivo|error_sistema|marca|politica|otro",
-      "substance": "melatonina (si aplica, sino null)",
-      "result": "aceptado|rechazado|pendiente|sin_respuesta",
-      "advisor_name": "nombre del asesor (si se menciona, sino null)"
+      "substance": "nombre de sustancia si aplica, sino null",
+      "result": "aceptado|rechazado|pendiente|sin_respuesta"
     }
   ],
-  "general_context": "resumen de 1 linea de la conversacion",
   "suspension_mentioned": true/false,
   "technical_error_mentioned": true/false
 }
+
+Reglas para classification:
+- apelacion: se apela una publicacion prohibida o con infraccion
+- validacion_preventiva: se pide a ML que confirme que publicaciones estan bien
+- suspension: se apela suspension de cuenta
+- reclamo: disputa de comprador
+- exclusion_demoras: pedir que excluyan retrasos de reputacion
+- operativo: envios, costos, devoluciones
+- error_operativo: caso abierto en cuenta equivocada o sin resultado por error del asesor Dropux
+- consulta_general: cualquier otra cosa
+
+Reglas para quality_score del asesor Dropux:
+- bueno: argumento bien, con evidencia, profesional
+- regular: hizo el trabajo pero sin evidencia fuerte o con errores menores
+- malo: caso en cuenta equivocada, argumento sin evidencia, no insistio cuando debia
+
 Si no hay publicaciones mencionadas, devuelve publications vacio.`
         },
         {
@@ -105,19 +126,14 @@ Si no hay publicaciones mencionadas, devuelve publications vacio.`
 
   // Get inquiries with conversations
   const inquiries = await supabaseGet(
-    'ml_support_inquiries?select=inquiry_number,country,store_id,conversation_text,inquiry_status&conversation_text=not.is.null&order=inquiry_date.desc'
+    'ml_support_inquiries?select=inquiry_number,country,store_id,conversation_text,inquiry_status,extracted_at&conversation_text=not.is.null&order=inquiry_date.desc'
   );
 
-  // Get already processed inquiries (check publication_history for source_ref)
-  const processed = await supabaseGet(
-    'publication_history?select=source_ref&source=eq.inquiry_extraction'
-  );
-  const processedRefs = new Set((processed || []).map(p => p.source_ref));
-
+  // Filter: only process inquiries without extracted_at (not yet classified)
   const toProcess = (inquiries || []).filter(inq =>
     inq.conversation_text &&
     inq.conversation_text.length > 50 &&
-    !processedRefs.has(`inquiry:${inq.inquiry_number}`)
+    !inq.extracted_at
   );
 
   log('info', 'inquiries_found', {
@@ -202,9 +218,39 @@ Si no hay publicaciones mencionadas, devuelve publications vacio.`
         events_created++;
       }
 
+      // Update ml_support_inquiries with classification
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/ml_support_inquiries?store_id=eq.${inq.store_id}&inquiry_number=eq.${inq.inquiry_number}`, {
+          method: 'PATCH',
+          headers: {
+            'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json', 'Prefer': 'return=minimal',
+          },
+          body: JSON.stringify({
+            classification: result.classification || null,
+            advisor_dropux: result.advisor_dropux || null,
+            advisor_ml: result.advisor_ml || null,
+            result: result.result || null,
+            quality_score: result.quality_score || null,
+            extracted_at: new Date().toISOString(),
+            extraction_metadata: {
+              quality_reason: result.quality_reason,
+              suspension_mentioned: result.suspension_mentioned,
+              technical_error_mentioned: result.technical_error_mentioned,
+              publications_count: (result.publications || []).length,
+            },
+          }),
+        });
+      } catch (e) {
+        log('warn', 'inquiry_update_failed', { inquiry: inq.inquiry_number, error: e.message });
+      }
+
       extracted++;
       log('info', 'extracted', {
         inquiry: inq.inquiry_number,
+        classification: result.classification,
+        result: result.result,
+        quality: result.quality_score,
         publications: (result.publications || []).length,
         events: events_created,
       });
