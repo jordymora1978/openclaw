@@ -106,9 +106,9 @@ async function searchCompetitors(country, searchTerm) {
       const pageText = await p.innerText('body');
 
       let origin = 'unknown';
-      if (pageText.includes('Envío desde USA') || pageText.includes('Envío desde Estados Unidos') || pageText.includes('Envío desde EE.UU')) {
+      if (pageText.includes('Envío desde USA') || pageText.includes('Envío desde Estados Unidos') || pageText.includes('Envío desde EE.UU') || pageText.includes('Envio de EUA') || pageText.includes('Envio desde USA')) {
         origin = 'USA';
-      } else if (pageText.includes('Envío desde China')) {
+      } else if (pageText.includes('Envío desde China') || pageText.includes('Envio da China')) {
         origin = 'China';
       } else if (pageText.includes('Envío desde')) {
         const match = pageText.match(/Envío desde\s+([^\n,]+)/);

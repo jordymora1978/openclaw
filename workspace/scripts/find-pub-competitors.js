@@ -89,7 +89,12 @@ async function searchAndVerify(page, country, searchTerm) {
 
       const isUSA = pageText.includes('Envío desde USA') ||
         pageText.includes('Envío desde Estados Unidos') ||
-        pageText.includes('Envío desde EE.UU');
+        pageText.includes('Envío desde EE.UU') ||
+        pageText.includes('Envio de EUA') ||
+        pageText.includes('Envio desde USA') ||
+        pageText.includes('Shipped from USA') ||
+        pageText.includes('Ships from USA') ||
+        pageText.includes('Envío desde USA');
       const isOurs = pageText.includes('USAGLOBAL') || pageText.includes('USAMIAMI') ||
         pageText.includes('GLOBAL SELLER') || pageText.includes('Global Seller') ||
         pageText.includes('Global technology');
