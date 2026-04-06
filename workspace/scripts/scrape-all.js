@@ -1,45 +1,37 @@
 /**
- * Scrape ALL countries in a single Browserbase session.
- * Auto-reconnects if session dies mid-scrape.
- *
- * Professional standards:
- * - Auto-reconnect on session death
- * - Structured JSON logging with timestamps
- * - Per-country stats saved to scrape_logs
- * - Circuit breaker per country (in scrape-country.js)
- * - Retry with exponential backoff (in scrape-country.js)
+ * Scrape ALL countries for ALL stores.
+ * Each store gets its own Browserbase session with auto-reconnect.
  */
 const { chromium } = require('/app/node_modules/playwright-core');
 const { scrapeCountry } = require('./scrape-country.js');
 
 const BB_KEY = process.env.BROWSERBASE_API_KEY;
 const BB_PROJECT = process.env.BROWSERBASE_PROJECT_ID;
-const BB_CONTEXT = process.env.BB_CONTEXT_49;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
-const STORE_ID = 49;
 const COUNTRIES = ['Mexico', 'Brazil', 'Argentina', 'Chile', 'Colombia'];
+
+const STORES = [
+  { id: 49, name: 'UGL', context: process.env.BB_CONTEXT_49 },
+  { id: 51, name: 'UMI', context: process.env.BB_CONTEXT_51 },
+].filter(s => s.context);
 
 function log(level, action, data = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), level, action, ...data }));
 }
 
-if (!BB_CONTEXT) {
-  log('error', 'missing_config', { var: 'BB_CONTEXT_49' });
+if (STORES.length === 0) {
+  log('error', 'no_stores_configured');
   process.exit(1);
 }
 
-async function createSession() {
+async function createSession(contextId) {
   const resp = await fetch('https://api.browserbase.com/v1/sessions', {
     method: 'POST',
     headers: { 'x-bb-api-key': BB_KEY, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      projectId: BB_PROJECT,
-      region: 'us-east-1',
-      browserSettings: {
-        solveCaptchas: true,
-        context: { id: BB_CONTEXT, persist: true },
-      },
+      projectId: BB_PROJECT, region: 'us-east-1',
+      browserSettings: { solveCaptchas: true, context: { id: contextId, persist: true } },
       keepAlive: true,
     }),
   });
@@ -52,7 +44,6 @@ async function connectAndVerify(sess) {
   const b = await chromium.connectOverCDP(sess.connectUrl);
   const ctx = b.contexts()[0];
   const p = ctx.pages()[0] || await ctx.newPage();
-
   await p.goto('https://global-selling.mercadolibre.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
   await p.waitForTimeout(3000);
   const check = await p.innerText('body');
@@ -63,157 +54,121 @@ async function connectAndVerify(sess) {
   return { browser: b, page: p };
 }
 
-(async () => {
-  const startTime = Date.now();
-  log('info', 'scrape_start', { store: STORE_ID, countries: COUNTRIES });
+async function scrapeStore(store) {
+  log('info', 'store_start', { store: store.id, name: store.name });
 
-  // Initial session
-  let sess = await createSession();
-  log('info', 'session_created', { id: sess.id });
+  let sess = await createSession(store.context);
+  let sessionCount = 1;
+  log('info', 'session_created', { store: store.id, session: sess.id });
   let { browser, page } = await connectAndVerify(sess);
-  log('info', 'auth_ok', { session: sess.id });
+  log('info', 'auth_ok', { store: store.id });
 
-  // Scrape each country
   const allStats = [];
   const countriesOk = [];
   const countriesFail = [];
   const allErrors = [];
-  let sessionCount = 1;
 
   for (const country of COUNTRIES) {
     let retried = false;
-
     try {
-      const stats = await scrapeCountry(page, country, STORE_ID);
+      const stats = await scrapeCountry(page, country, store.id);
       allStats.push(stats);
 
-      // Check if circuit breaker triggered (session probably dead)
       const sessionDied = stats.errors.some(e => e.includes('browser has been closed') || e.includes('Target page'));
 
-      if (sessionDied && stats.inquiries_saved < stats.inquiries_found) {
-        // Session died mid-country — reconnect and retry remaining
-        log('warn', 'session_died', { country, saved: stats.inquiries_saved, found: stats.inquiries_found });
+      if (sessionDied && (stats.inquiries_new + stats.inquiries_updated + stats.inquiries_unchanged) < stats.inquiries_found) {
+        log('warn', 'session_died', { store: store.id, country });
+        try { await browser.close().catch(() => {}); } catch {}
 
-        try {
-          await browser.close().catch(() => {});
-        } catch {}
-
-        sess = await createSession();
+        sess = await createSession(store.context);
         sessionCount++;
-        log('info', 'session_reconnected', { id: sess.id, session_number: sessionCount, for_country: country });
+        log('info', 'session_reconnected', { store: store.id, session: sess.id, for_country: country });
         ({ browser, page } = await connectAndVerify(sess));
-        log('info', 'auth_ok', { session: sess.id });
 
-        // Retry the country with fresh session
-        const retryStats = await scrapeCountry(page, country, STORE_ID);
+        const retryStats = await scrapeCountry(page, country, store.id);
         retried = true;
+        allStats[allStats.length - 1] = retryStats;
 
-        // Merge stats: add new saves to previous
-        const mergedSaved = stats.inquiries_saved + retryStats.inquiries_saved;
-        const mergedConv = stats.inquiries_with_conversation + retryStats.inquiries_with_conversation;
-        const mergedErrors = retryStats.errors.length > 0 ? retryStats.errors : [];
-
-        // Replace stats with merged
-        allStats[allStats.length - 1] = {
-          ...retryStats,
-          inquiries_saved: mergedSaved,
-          inquiries_with_conversation: mergedConv,
-          errors: mergedErrors,
-        };
-
-        if (mergedErrors.length === 0) {
-          countriesOk.push(country);
-        } else {
-          countriesFail.push(country);
-          allErrors.push(...mergedErrors.map(e => `${country} (retry): ${e}`));
-        }
+        if (retryStats.errors.length === 0) countriesOk.push(country);
+        else { countriesFail.push(country); allErrors.push(...retryStats.errors.map(e => `${country}: ${e}`)); }
       } else if (stats.errors.length === 0) {
         countriesOk.push(country);
       } else {
         countriesFail.push(country);
         allErrors.push(...stats.errors.map(e => `${country}: ${e}`));
       }
-
     } catch (e) {
       const errMsg = e.message.split('\n')[0];
-      const isBrowserDead = errMsg.includes('browser has been closed') || errMsg.includes('Target page');
-
-      if (isBrowserDead && !retried) {
-        // Session died before we could even start — reconnect
-        log('warn', 'session_died_fatal', { country, error: errMsg });
-
+      if ((errMsg.includes('browser has been closed') || errMsg.includes('Target page')) && !retried) {
+        log('warn', 'session_died_fatal', { store: store.id, country });
         try { await browser.close().catch(() => {}); } catch {}
-
         try {
-          sess = await createSession();
+          sess = await createSession(store.context);
           sessionCount++;
-          log('info', 'session_reconnected', { id: sess.id, session_number: sessionCount, for_country: country });
           ({ browser, page } = await connectAndVerify(sess));
-          log('info', 'auth_ok', { session: sess.id });
-
-          const retryStats = await scrapeCountry(page, country, STORE_ID);
+          const retryStats = await scrapeCountry(page, country, store.id);
           allStats.push(retryStats);
-          if (retryStats.errors.length === 0) {
-            countriesOk.push(country);
-          } else {
-            countriesFail.push(country);
-            allErrors.push(...retryStats.errors.map(e => `${country} (reconnect): ${e}`));
-          }
-        } catch (reconnectErr) {
-          log('error', 'reconnect_failed', { country, error: reconnectErr.message.split('\n')[0] });
+          if (retryStats.errors.length === 0) countriesOk.push(country);
+          else { countriesFail.push(country); allErrors.push(...retryStats.errors.map(e => `${country}: ${e}`)); }
+        } catch (re) {
           countriesFail.push(country);
-          allErrors.push(`${country}: reconnect failed — ${reconnectErr.message.split('\n')[0]}`);
+          allErrors.push(`${country}: reconnect failed`);
         }
       } else {
-        log('error', 'country_fatal', { country, error: errMsg });
         countriesFail.push(country);
-        allErrors.push(`${country}: FATAL — ${errMsg}`);
+        allErrors.push(`${country}: ${errMsg}`);
       }
     }
   }
 
   try { await browser.close(); } catch {}
 
-  // Summary
-  const elapsed = Date.now() - startTime;
-  const totalFound = allStats.reduce((s, c) => s + (c.inquiries_found || 0), 0);
-  const totalNew = allStats.reduce((s, c) => s + (c.inquiries_new || 0), 0);
-  const totalUpdated = allStats.reduce((s, c) => s + (c.inquiries_updated || 0), 0);
-  const totalUnchanged = allStats.reduce((s, c) => s + (c.inquiries_unchanged || 0), 0);
-  const totalConv = allStats.reduce((s, c) => s + (c.inquiries_with_conversation || 0), 0);
-  const totalFailed = allStats.reduce((s, c) => s + (c.failed_inquiries || []).length, 0);
-  const status = countriesFail.length === 0 ? 'success' : countriesOk.length === 0 ? 'error' : 'partial';
+  return { store, allStats, countriesOk, countriesFail, allErrors, sessionCount };
+}
 
-  log('info', 'scrape_done', {
-    status, duration_ms: elapsed, sessions_used: sessionCount,
-    countries_ok: countriesOk, countries_fail: countriesFail,
-    total_found: totalFound,
-    total_new: totalNew,
-    total_updated: totalUpdated,
-    total_unchanged: totalUnchanged,
-    total_with_conversation: totalConv,
-    total_failed: totalFailed,
-    errors: allErrors,
-  });
+(async () => {
+  const startTime = Date.now();
+  log('info', 'scrape_start', { stores: STORES.map(s => `${s.id}(${s.name})`), countries: COUNTRIES });
 
-  // Save to scrape_logs
-  try {
-    await fetch(`${SUPABASE_URL}/rest/v1/scrape_logs`, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
-        'Content-Type': 'application/json', 'Prefer': 'return=minimal',
-      },
-      body: JSON.stringify({
-        scrape_type: 'inquiries', store_id: STORE_ID,
-        countries_scraped: countriesOk, countries_failed: countriesFail,
-        new_inquiries: totalNew, updated_inquiries: totalUpdated,
-        total_inquiries: totalFound,
-        errors: allErrors, duration_ms: elapsed, status,
-      }),
-    });
-    log('info', 'scrape_log_saved');
-  } catch (e) {
-    log('error', 'scrape_log_failed', { error: e.message });
+  for (const store of STORES) {
+    try {
+      const result = await scrapeStore(store);
+      const elapsed = Date.now() - startTime;
+      const totalFound = result.allStats.reduce((s, c) => s + (c.inquiries_found || 0), 0);
+      const totalNew = result.allStats.reduce((s, c) => s + (c.inquiries_new || 0), 0);
+      const totalUpdated = result.allStats.reduce((s, c) => s + (c.inquiries_updated || 0), 0);
+      const totalUnchanged = result.allStats.reduce((s, c) => s + (c.inquiries_unchanged || 0), 0);
+      const totalConv = result.allStats.reduce((s, c) => s + (c.inquiries_with_conversation || 0), 0);
+      const totalFailed = result.allStats.reduce((s, c) => s + (c.failed_inquiries || []).length, 0);
+      const status = result.countriesFail.length === 0 ? 'success' : result.countriesOk.length === 0 ? 'error' : 'partial';
+
+      log('info', 'store_done', {
+        store: store.id, name: store.name, status,
+        sessions_used: result.sessionCount,
+        countries_ok: result.countriesOk, countries_fail: result.countriesFail,
+        total_found: totalFound, total_new: totalNew,
+        total_updated: totalUpdated, total_unchanged: totalUnchanged,
+        total_with_conversation: totalConv, total_failed: totalFailed,
+      });
+
+      // Save to scrape_logs
+      try {
+        await fetch(`${SUPABASE_URL}/rest/v1/scrape_logs`, {
+          method: 'POST',
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({
+            scrape_type: 'inquiries', store_id: store.id,
+            countries_scraped: result.countriesOk, countries_failed: result.countriesFail,
+            new_inquiries: totalNew, updated_inquiries: totalUpdated, total_inquiries: totalFound,
+            errors: result.allErrors, duration_ms: elapsed, status,
+          }),
+        });
+      } catch (e) { log('error', 'log_save_failed', { store: store.id, error: e.message }); }
+
+    } catch (e) {
+      log('error', 'store_failed', { store: store.id, error: e.message.split('\n')[0] });
+    }
   }
+
+  log('info', 'scrape_all_done', { duration_ms: Date.now() - startTime, stores_scraped: STORES.length });
 })().catch(e => { log('error', 'fatal', { error: e.message }); process.exit(1); });
