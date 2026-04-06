@@ -138,9 +138,8 @@ Si no hay publicaciones mencionadas, devuelve publications vacio.`
 
   log('info', 'inquiries_found', {
     total: (inquiries || []).length,
-    with_conversation: toProcess.length + processedRefs.size,
-    already_processed: processedRefs.size,
-    to_process: toProcess.length
+    to_process: toProcess.length,
+    already_processed: (inquiries || []).length - toProcess.length
   });
 
   let extracted = 0;
