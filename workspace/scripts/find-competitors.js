@@ -115,10 +115,16 @@ async function searchCompetitors(country, searchTerm) {
         origin = match ? match[1].trim() : 'otro';
       }
 
+      // Check if it's our own store
+      const isOurs = pageText.includes('USAGLOBAL') || pageText.includes('USAMIAMI') ||
+        pageText.includes('GLOBAL SELLER') || pageText.includes('Global Seller');
+
       item.origin = origin;
-      if (origin === 'USA') {
+      if (origin === 'USA' && !isOurs) {
         verified.push(item);
         console.log(`  ✅ USA: ${item.id} | ${item.title}`);
+      } else if (isOurs) {
+        console.log(`  ⛔ NUESTRO: ${item.id} | ${item.title} — descartado`);
       } else {
         console.log(`  ❌ ${origin}: ${item.id} | ${item.title} — descartado`);
       }
