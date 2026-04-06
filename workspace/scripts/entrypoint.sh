@@ -95,6 +95,11 @@ setTimeout(() => {
   setInterval(() => runScript('find-pub-competitors.js'), INTERVAL_MS);
 }, 5*60*1000);
 
+// Retry failed competitor searches with LLM ingredients 10min after scraper (one-time on startup)
+setTimeout(() => {
+  runScript('retry-competitors.js');
+}, 10*60*1000);
+
 // Health check
 const server = http.createServer((req, res) => {
   if (req.url === '/healthz' || req.url === '/health') {
