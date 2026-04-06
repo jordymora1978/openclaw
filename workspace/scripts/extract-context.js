@@ -82,10 +82,15 @@ Reglas para classification:
 - error_operativo: caso abierto en cuenta equivocada o sin resultado por error del asesor Dropux
 - consulta_general: cualquier otra cosa
 
+Reglas para identificar advisor_dropux vs advisor_ml:
+- El asesor Dropux es la PERSONA que abre el caso y escribe los mensajes del lado del vendedor. Busca cuando dice "mi nombre es X" o "hablas con X". NUNCA es el nombre de la cuenta (GLOBAL SELLER, Global technology Mi, etc). NUNCA es un codigo como UY20260210121636. Es un nombre de persona real.
+- El asesor ML es quien responde con firma de "Customer Service / Mercado Libre | Mercado Pago". Busca su nombre al inicio de su primer mensaje o en su firma.
+- Si no puedes identificar el nombre real del asesor Dropux, pon null. NUNCA pongas el nombre de la cuenta ni codigos.
+
 Reglas para quality_score del asesor Dropux:
-- bueno: argumento bien, con evidencia, profesional
+- bueno: argumento bien, con evidencia, profesional, insistio cuando debia
 - regular: hizo el trabajo pero sin evidencia fuerte o con errores menores
-- malo: caso en cuenta equivocada, argumento sin evidencia, no insistio cuando debia
+- malo: caso en cuenta equivocada, argumento sin evidencia, no insistio cuando debia, o no se presento
 
 Si no hay publicaciones mencionadas, devuelve publications vacio.`
         },
