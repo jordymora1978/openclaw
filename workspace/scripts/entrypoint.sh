@@ -78,6 +78,12 @@ function runScript(name) {
 runScript('scrape-all.js');
 setInterval(() => runScript('scrape-all.js'), INTERVAL_MS);
 
+// Extract context from conversations 30min after scraper + every 6h
+setTimeout(() => {
+  runScript('extract-context.js');
+  setInterval(() => runScript('extract-context.js'), INTERVAL_MS);
+}, 30*60*1000);
+
 // Run competitor search 1h after scraper + every 6h
 setTimeout(() => {
   runScript('find-competitors.js');
