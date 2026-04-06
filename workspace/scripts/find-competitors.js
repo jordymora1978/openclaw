@@ -66,26 +66,79 @@ async function searchCompetitors(country, searchTerm) {
   const ctx = b.contexts()[0];
   const p = ctx.pages()[0] || await ctx.newPage();
 
-  const url = baseUrl + encodeURIComponent(searchTerm).replace(/%20/g, '+');
+  // Search with international filter
+  const encoded = encodeURIComponent(searchTerm).replace(/%20/g, '+');
+  const url = baseUrl + encoded + '#D[A:' + encoded + ',L:INTERNATIONAL]';
   await p.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-  await p.waitForTimeout(4000);
+  await p.waitForTimeout(5000);
 
+  // Extract results — filter for international sellers only
   const items = await p.evaluate(() => {
     const results = [];
     const seen = new Set();
-    document.querySelectorAll('a').forEach(a => {
-      if ((a.href.includes('/p/') || a.href.includes('_JM')) && a.href.includes('mercadoli')) {
-        const text = a.textContent.trim();
-        const url = a.href.split('?')[0].split('#')[0];
-        if (text.length > 15 && !seen.has(url)) {
-          seen.add(url);
-          // Extract MLB/MCO/MLA ID from URL
-          const match = url.match(/(MLB|MCO|MLA|MLC|MLM)\d+/);
-          const id = match ? match[0] : '';
-          results.push({ title: text.substring(0, 80), url, id });
+
+    // Find all product cards/items
+    const cards = document.querySelectorAll('.ui-search-layout__item, .poly-card, [class*="search-result"]');
+
+    // If cards found, check each for international badge
+    if (cards.length > 0) {
+      cards.forEach(card => {
+        const cardText = card.textContent || '';
+        const isInternational = cardText.includes('Internacional') ||
+          cardText.includes('Envío desde') ||
+          cardText.includes('international') ||
+          cardText.includes('Cross border');
+
+        if (isInternational) {
+          const link = card.querySelector('a[href*="/p/"], a[href*="_JM"]');
+          if (link) {
+            const href = link.href.split('?')[0].split('#')[0];
+            const text = link.textContent.trim();
+            if (text.length > 10 && !seen.has(href)) {
+              seen.add(href);
+              const match = href.match(/(MLB|MCO|MLA|MLC|MLM)\d+/);
+              results.push({ title: text.substring(0, 80), url: href, id: match ? match[0] : '', isInternational: true });
+            }
+          }
         }
-      }
-    });
+      });
+    }
+
+    // Fallback: if no cards found or no international, try all links with international text nearby
+    if (results.length === 0) {
+      document.querySelectorAll('a').forEach(a => {
+        if ((a.href.includes('/p/') || a.href.includes('_JM')) && a.href.includes('mercadoli')) {
+          const text = a.textContent.trim();
+          const href = a.href.split('?')[0].split('#')[0];
+          // Check parent container for international badge
+          const parent = a.closest('[class*="item"], [class*="card"], [class*="result"]') || a.parentElement?.parentElement;
+          const parentText = parent ? parent.textContent : '';
+          const isIntl = parentText.includes('Internacional') || parentText.includes('Envío desde');
+
+          if (text.length > 15 && !seen.has(href) && isIntl) {
+            seen.add(href);
+            const match = href.match(/(MLB|MCO|MLA|MLC|MLM)\d+/);
+            results.push({ title: text.substring(0, 80), url: href, id: match ? match[0] : '', isInternational: true });
+          }
+        }
+      });
+    }
+
+    // If still nothing, get all results but mark as unverified
+    if (results.length === 0) {
+      document.querySelectorAll('a').forEach(a => {
+        if ((a.href.includes('/p/') || a.href.includes('_JM')) && a.href.includes('mercadoli')) {
+          const text = a.textContent.trim();
+          const href = a.href.split('?')[0].split('#')[0];
+          if (text.length > 15 && !seen.has(href)) {
+            seen.add(href);
+            const match = href.match(/(MLB|MCO|MLA|MLC|MLM)\d+/);
+            results.push({ title: text.substring(0, 80), url: href, id: match ? match[0] : '', isInternational: false });
+          }
+        }
+      });
+    }
+
     return results.slice(0, 5);
   });
 
@@ -121,43 +174,24 @@ async function searchCompetitors(country, searchTerm) {
 
     let searchTerm = '';
 
-    // Try subtask metadata first (has ingredient extracted by GPT)
+    // Get title from catalog — use cleaned title as search term
     try {
-      const subResp = await fetch(
-        `${SB_URL}/rest/v1/topic_subtasks?select=metadata&ml_item_id=eq.${firstId}&limit=1`,
-        { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }
+      const pubResp = await fetch(
+        `${CATALOG_URL}/rest/v1/ml_publications?select=title,asin,brand&ml_item_id=eq.${firstId}&limit=1`,
+        { headers: { 'apikey': CATALOG_KEY, 'Authorization': `Bearer ${CATALOG_KEY}` } }
       );
-      const subs = await subResp.json();
-      if (subs[0] && subs[0].metadata) {
-        const meta = subs[0].metadata;
-        // Use ingredient if available (best search term)
-        if (meta.ingredient && meta.ingredient !== 'N/A') {
-          searchTerm = meta.ingredient + ' suplemento';
-        } else if (meta.brand && meta.brand !== 'Generic') {
-          searchTerm = meta.brand;
-        }
+      const pubs = await pubResp.json();
+      if (pubs[0]) {
+        // Clean title: keep product name, remove quantities/units
+        searchTerm = pubs[0].title
+          .replace(/^Suplemento\s+/i, '')
+          .replace(/^Supplement\s+/i, '')
+          .replace(/\d+\s*(mg|mcg|oz|ml|count|ct|unidades|piezas|capsul|tablet|softgel|gomit|comprimid|cápsula|gummies|líquid|polvo|paquete|porcion|servings).*/i, '')
+          .replace(/,\s*\d+.*/i, '')
+          .trim()
+          .substring(0, 50);
       }
     } catch {}
-
-    // Fallback: use title from catalog
-    if (!searchTerm) {
-      try {
-        const pubResp = await fetch(
-          `${CATALOG_URL}/rest/v1/ml_publications?select=title&ml_item_id=eq.${firstId}&limit=1`,
-          { headers: { 'apikey': CATALOG_KEY, 'Authorization': `Bearer ${CATALOG_KEY}` } }
-        );
-        const pubs = await pubResp.json();
-        if (pubs[0]) {
-          // Extract key words: remove generic prefixes, take first 3-4 meaningful words
-          searchTerm = pubs[0].title
-            .replace(/^Suplemento\s+/i, '')
-            .replace(/^Supplement\s+/i, '')
-            .replace(/\d+\s*(mg|mcg|oz|ml|count|ct|capsul|tablet|softgel|gomit|comprimid).*/i, '')
-            .trim()
-            .substring(0, 40);
-        }
-      } catch {}
-    }
 
     if (!searchTerm) {
       console.log('Could not get search term');
