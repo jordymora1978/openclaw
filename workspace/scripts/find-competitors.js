@@ -115,22 +115,49 @@ async function searchCompetitors(country, searchTerm) {
   for (const c of cases) {
     console.log(`\n--- ${c.case_id} (${c.country}) ---`);
 
-    // Get first item's title as search term
+    // Get search term — prefer ingredient from subtask metadata, fallback to title
     const firstId = (c.ml_item_ids || [])[0];
     if (!firstId) { console.log('No items'); continue; }
 
     let searchTerm = '';
+
+    // Try subtask metadata first (has ingredient extracted by GPT)
     try {
-      const pubResp = await fetch(
-        `${CATALOG_URL}/rest/v1/ml_publications?select=title&ml_item_id=eq.${firstId}&limit=1`,
-        { headers: { 'apikey': CATALOG_KEY, 'Authorization': `Bearer ${CATALOG_KEY}` } }
+      const subResp = await fetch(
+        `${SB_URL}/rest/v1/topic_subtasks?select=metadata&ml_item_id=eq.${firstId}&limit=1`,
+        { headers: { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}` } }
       );
-      const pubs = await pubResp.json();
-      if (pubs[0]) {
-        // Clean title: remove brand prefixes, take main product name
-        searchTerm = pubs[0].title.replace(/^Suplemento\s+/i, '').substring(0, 50);
+      const subs = await subResp.json();
+      if (subs[0] && subs[0].metadata) {
+        const meta = subs[0].metadata;
+        // Use ingredient if available (best search term)
+        if (meta.ingredient && meta.ingredient !== 'N/A') {
+          searchTerm = meta.ingredient + ' suplemento';
+        } else if (meta.brand && meta.brand !== 'Generic') {
+          searchTerm = meta.brand;
+        }
       }
     } catch {}
+
+    // Fallback: use title from catalog
+    if (!searchTerm) {
+      try {
+        const pubResp = await fetch(
+          `${CATALOG_URL}/rest/v1/ml_publications?select=title&ml_item_id=eq.${firstId}&limit=1`,
+          { headers: { 'apikey': CATALOG_KEY, 'Authorization': `Bearer ${CATALOG_KEY}` } }
+        );
+        const pubs = await pubResp.json();
+        if (pubs[0]) {
+          // Extract key words: remove generic prefixes, take first 3-4 meaningful words
+          searchTerm = pubs[0].title
+            .replace(/^Suplemento\s+/i, '')
+            .replace(/^Supplement\s+/i, '')
+            .replace(/\d+\s*(mg|mcg|oz|ml|count|ct|capsul|tablet|softgel|gomit|comprimid).*/i, '')
+            .trim()
+            .substring(0, 40);
+        }
+      } catch {}
+    }
 
     if (!searchTerm) {
       console.log('Could not get search term');
