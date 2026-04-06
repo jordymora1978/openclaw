@@ -80,16 +80,19 @@ async function searchCompetitors(country, searchTerm) {
     // Find all product cards/items
     const cards = document.querySelectorAll('.ui-search-layout__item, .poly-card, [class*="search-result"]');
 
-    // If cards found, check each for international badge
+    // Check each card for "Envío desde" origin
     if (cards.length > 0) {
       cards.forEach(card => {
         const cardText = card.textContent || '';
-        const isInternational = cardText.includes('Internacional') ||
-          cardText.includes('Envío desde') ||
-          cardText.includes('international') ||
-          cardText.includes('Cross border');
+        // Only accept USA sellers
+        const isUSA = cardText.includes('Envío desde USA') ||
+          cardText.includes('Envío desde Estados Unidos') ||
+          cardText.includes('Envío desde EE.UU') ||
+          cardText.includes('Envio desde USA') ||
+          cardText.includes('Ships from USA') ||
+          cardText.includes('Ships from United States');
 
-        if (isInternational) {
+        if (isUSA) {
           const link = card.querySelector('a[href*="/p/"], a[href*="_JM"]');
           if (link) {
             const href = link.href.split('?')[0].split('#')[0];
@@ -97,43 +100,31 @@ async function searchCompetitors(country, searchTerm) {
             if (text.length > 10 && !seen.has(href)) {
               seen.add(href);
               const match = href.match(/(MLB|MCO|MLA|MLC|MLM)\d+/);
-              results.push({ title: text.substring(0, 80), url: href, id: match ? match[0] : '', isInternational: true });
+              results.push({ title: text.substring(0, 80), url: href, id: match ? match[0] : '', origin: 'USA' });
             }
           }
         }
       });
     }
 
-    // Fallback: if no cards found or no international, try all links with international text nearby
+    // Fallback: check all links with parent context
     if (results.length === 0) {
       document.querySelectorAll('a').forEach(a => {
         if ((a.href.includes('/p/') || a.href.includes('_JM')) && a.href.includes('mercadoli')) {
           const text = a.textContent.trim();
           const href = a.href.split('?')[0].split('#')[0];
-          // Check parent container for international badge
-          const parent = a.closest('[class*="item"], [class*="card"], [class*="result"]') || a.parentElement?.parentElement;
+          const parent = a.closest('[class*="item"], [class*="card"], [class*="result"], [class*="poly"]') || a.parentElement?.parentElement?.parentElement;
           const parentText = parent ? parent.textContent : '';
-          const isIntl = parentText.includes('Internacional') || parentText.includes('Envío desde');
 
-          if (text.length > 15 && !seen.has(href) && isIntl) {
+          const isUSA = parentText.includes('Envío desde USA') ||
+            parentText.includes('Envío desde Estados Unidos') ||
+            parentText.includes('Envío desde EE.UU') ||
+            parentText.includes('Ships from USA');
+
+          if (text.length > 15 && !seen.has(href) && isUSA) {
             seen.add(href);
             const match = href.match(/(MLB|MCO|MLA|MLC|MLM)\d+/);
-            results.push({ title: text.substring(0, 80), url: href, id: match ? match[0] : '', isInternational: true });
-          }
-        }
-      });
-    }
-
-    // If still nothing, get all results but mark as unverified
-    if (results.length === 0) {
-      document.querySelectorAll('a').forEach(a => {
-        if ((a.href.includes('/p/') || a.href.includes('_JM')) && a.href.includes('mercadoli')) {
-          const text = a.textContent.trim();
-          const href = a.href.split('?')[0].split('#')[0];
-          if (text.length > 15 && !seen.has(href)) {
-            seen.add(href);
-            const match = href.match(/(MLB|MCO|MLA|MLC|MLM)\d+/);
-            results.push({ title: text.substring(0, 80), url: href, id: match ? match[0] : '', isInternational: false });
+            results.push({ title: text.substring(0, 80), url: href, id: match ? match[0] : '', origin: 'USA' });
           }
         }
       });
