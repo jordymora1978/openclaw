@@ -46,7 +46,7 @@ async function extractWithLLM(conversation, inquiryNumber, country) {
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       temperature: 0.1,
-      max_tokens: 1000,
+      max_tokens: 1500,
       messages: [
         {
           role: 'system',
@@ -58,6 +58,7 @@ async function extractWithLLM(conversation, inquiryNumber, country) {
   "result": "resuelto|rechazado|pendiente|sin_resultado|informativo",
   "quality_score": "bueno|regular|malo",
   "quality_reason": "explicacion corta de por que esa calificacion",
+  "inquiry_channel": "chat|formulario",
   "general_context": "resumen de 2-3 lineas de lo que se pidio y que respondio ML",
   "publications": [
     {
@@ -68,6 +69,17 @@ async function extractWithLLM(conversation, inquiryNumber, country) {
       "result": "aceptado|rechazado|pendiente|sin_respuesta"
     }
   ],
+  "interactions": [
+    {
+      "date": "April 1",
+      "author": "nombre de quien escribe",
+      "role": "dropux|ml",
+      "summary": "resumen corto de lo que dijo"
+    }
+  ],
+  "ml_advisors": ["nombre1", "nombre2"],
+  "contradictions": "si dos asesores ML se contradicen, describir aqui. null si no hay",
+  "response_time_assessment": "rapido|normal|lento|sin_respuesta",
   "suspension_mentioned": true/false,
   "technical_error_mentioned": true/false
 }
@@ -81,6 +93,26 @@ Reglas para classification:
 - operativo: envios, costos, devoluciones
 - error_operativo: caso abierto en cuenta equivocada o sin resultado por error del asesor Dropux
 - consulta_general: cualquier otra cosa
+
+Reglas para inquiry_channel:
+- chat: tiene timestamps con hora exacta (HH:MM:SS), burbujas, "This chat has ended"
+- formulario: tiene bloques "You [fecha]" / "Mercado Libre [fecha]", textos largos, sin hora exacta
+
+Reglas para interactions:
+- Extrae CADA mensaje separado con fecha, autor y resumen corto
+- En formularios puede haber varios dias de diferencia entre mensajes
+- Identifica si multiples asesores ML participan
+
+Reglas para contradictions:
+- Si un asesor ML dice X y otro dice Y sobre el mismo tema, describir la contradiccion
+- Ejemplo: asesor 1 dice "es un error del sistema" y asesor 2 dice "no es un error, es una nueva infraccion"
+- Si no hay contradiccion, poner null
+
+Reglas para response_time_assessment:
+- rapido: ML responde el mismo dia
+- normal: ML responde en 1-2 dias
+- lento: ML responde despues de 3+ dias
+- sin_respuesta: ML no ha respondido
 
 Reglas para identificar advisor_dropux vs advisor_ml:
 - El asesor Dropux es la PERSONA que abre el caso y escribe los mensajes del lado del vendedor. Busca cuando dice "mi nombre es X" o "hablas con X". NUNCA es el nombre de la cuenta (GLOBAL SELLER, Global technology Mi, etc). NUNCA es un codigo como UY20260210121636. Es un nombre de persona real.
@@ -232,16 +264,21 @@ Si no hay publicaciones mencionadas, devuelve publications vacio.`
           },
           body: JSON.stringify({
             classification: result.classification || null,
+            inquiry_channel: result.inquiry_channel || null,
             advisor_dropux: result.advisor_dropux || null,
-            advisor_ml: result.advisor_ml || null,
+            advisor_ml: (result.ml_advisors || []).join(', ') || result.advisor_ml || null,
             result: result.result || null,
             quality_score: result.quality_score || null,
+            interactions: result.interactions || [],
             extracted_at: new Date().toISOString(),
             extraction_metadata: {
               quality_reason: result.quality_reason,
               suspension_mentioned: result.suspension_mentioned,
               technical_error_mentioned: result.technical_error_mentioned,
               publications_count: (result.publications || []).length,
+              contradictions: result.contradictions,
+              response_time: result.response_time_assessment,
+              ml_advisors: result.ml_advisors,
             },
           }),
         });
