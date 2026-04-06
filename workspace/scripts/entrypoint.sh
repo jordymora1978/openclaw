@@ -32,10 +32,10 @@ for f in /home/node/.openclaw/workspace/*.md; do
   [ -f "$DEST/workspace/$base" ] || cp "$f" "$DEST/workspace/$base"
 done
 
-# Scripts .js
+# Scripts .js — ALWAYS overwrite (code must stay in sync with deploy)
 for f in /home/node/.openclaw/workspace/scripts/*.js; do
   base=$(basename "$f")
-  [ -f "$DEST/workspace/scripts/$base" ] || cp "$f" "$DEST/workspace/scripts/$base"
+  cp "$f" "$DEST/workspace/scripts/$base"
 done
 
 # Skills
