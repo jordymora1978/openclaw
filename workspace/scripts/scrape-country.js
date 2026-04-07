@@ -154,16 +154,43 @@ async function scrapeCountry(p, country, storeId) {
     scraped_date: today,
   });
 
-  // ── Read inquiries ──
+  // ── Read inquiries (all pages) ──
   log('info', 'read_inquiries', { country });
   await p.goto('https://global-selling.mercadolibre.com/help/v2', { waitUntil: 'domcontentloaded', timeout: 20000 });
   await p.waitForTimeout(3000);
   try { await p.getByText('Show all').click({ timeout: 5000 }); await p.waitForTimeout(3000); } catch (e) {}
 
-  const hrefs = await p.locator('a').filter({ hasText: /Go to the inquir|Go to chat/ })
-    .evaluateAll(els => els.map(el => el.href).filter(Boolean));
+  // Collect inquiry links from all pages
+  const allHrefs = [];
+  let currentPage = 1;
+  const MAX_PAGES = 20;
+
+  while (currentPage <= MAX_PAGES) {
+    const pageHrefs = await p.locator('a').filter({ hasText: /Go to the inquir|Go to chat/ })
+      .evaluateAll(els => els.map(el => el.href).filter(Boolean));
+    allHrefs.push(...pageHrefs);
+
+    // Next page button: aria-label="Next page" (andes-ui-pagination)
+    const nextBtn = p.locator('button[aria-label="Next page"]');
+    const hasNext = await nextBtn.count() > 0;
+    if (!hasNext) break;
+
+    const isDisabled = await nextBtn.isDisabled().catch(() => true);
+    if (isDisabled) break;
+
+    try {
+      await nextBtn.click({ timeout: 5000 });
+      await p.waitForTimeout(3000);
+      currentPage++;
+    } catch (e) {
+      break;
+    }
+  }
+
+  // Deduplicate
+  const hrefs = [...new Set(allHrefs)];
   stats.inquiries_found = hrefs.length;
-  log('info', 'inquiries_found', { country, count: hrefs.length });
+  log('info', 'inquiries_found', { country, count: hrefs.length, pages: currentPage });
 
   // ── Circuit breaker ──
   let consecutiveFailures = 0;
