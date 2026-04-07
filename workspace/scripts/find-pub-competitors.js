@@ -55,7 +55,8 @@ async function searchAndVerify(page, country, searchTerm) {
   if (!baseUrl) return [];
 
   const encoded = encodeURIComponent(searchTerm).replace(/%20/g, '+');
-  const url = baseUrl + encoded + '#D[A:' + encoded + ',L:INTERNATIONAL]';
+  // No INTERNATIONAL filter — it misses many USA sellers. Verify origin on product page instead.
+  const url = baseUrl + encoded;
 
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
   await page.waitForTimeout(4000);
