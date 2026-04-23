@@ -89,16 +89,19 @@ setTimeout(() => {
   setInterval(() => runScript('extract-context.js'), INTERVAL_MS);
 }, 30*60*1000);
 
-// Run per-publication competitor search 5min after scraper + every 6h
-setTimeout(() => {
-  runScript('find-pub-competitors.js');
-  setInterval(() => runScript('find-pub-competitors.js'), INTERVAL_MS);
-}, 5*60*1000);
-
-// Retry failed competitor searches with LLM ingredients 10min after scraper (one-time on startup)
-setTimeout(() => {
-  runScript('retry-competitors.js');
-}, 10*60*1000);
+// DISABLED 2026-04-23: both competitor scripts share the Browserbase context with
+// scrape-store.js and kill its session mid-run (Colombia always fails). Re-enable
+// when we want competitor data; consider moving them to a delay > scraper duration.
+// // Run per-publication competitor search 5min after scraper + every 6h
+// setTimeout(() => {
+//   runScript('find-pub-competitors.js');
+//   setInterval(() => runScript('find-pub-competitors.js'), INTERVAL_MS);
+// }, 5*60*1000);
+//
+// // Retry failed competitor searches with LLM ingredients 10min after scraper (one-time on startup)
+// setTimeout(() => {
+//   runScript('retry-competitors.js');
+// }, 10*60*1000);
 
 // Health check
 const server = http.createServer((req, res) => {
