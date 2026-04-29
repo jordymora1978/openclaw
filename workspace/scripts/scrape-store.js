@@ -54,22 +54,37 @@ async function connectAndVerify(sess) {
   return { browser: b, page: p };
 }
 
+async function freshSession(label) {
+  const sess = await createSession();
+  const { browser, page } = await connectAndVerify(sess);
+  log('info', 'session_ready', { session: sess.id, for: label });
+  return { sess, browser, page };
+}
+
 (async () => {
   const startTime = Date.now();
-  log('info', 'start', { name: STORE_NAME, countries: COUNTRIES });
+  log('info', 'start', { name: STORE_NAME, countries: COUNTRIES, strategy: 'session-per-country' });
 
-  let sess = await createSession();
-  let sessionCount = 1;
-  log('info', 'session_created', { session: sess.id });
-  let { browser, page } = await connectAndVerify(sess);
-  log('info', 'auth_ok');
-
+  let sessionCount = 0;
   const allStats = [];
   const countriesOk = [];
   const countriesFail = [];
   const allErrors = [];
 
+  // ESTRATEGIA POR GRUPOS: una sesión Browserbase fresca por cada país.
+  // Evita que la sesión muera tras 5+ min de uso intenso (root cause del fallo previo).
   for (const country of COUNTRIES) {
+    let browser, page;
+    try {
+      ({ browser, page } = await freshSession(country));
+      sessionCount++;
+    } catch (e) {
+      log('error', 'session_init_failed', { country, error: e.message.split('\n')[0] });
+      countriesFail.push(country);
+      allErrors.push(`${country}: session init failed`);
+      continue;
+    }
+
     let retried = false;
     try {
       const stats = await scrapeCountry(page, country, STORE_ID);
@@ -81,12 +96,8 @@ async function connectAndVerify(sess) {
       if (sessionDied && saved < stats.inquiries_found) {
         log('warn', 'session_died', { country, saved, found: stats.inquiries_found });
         try { await browser.close().catch(() => {}); } catch {}
-
-        sess = await createSession();
+        ({ browser, page } = await freshSession(country + '-retry'));
         sessionCount++;
-        log('info', 'reconnected', { session: sess.id, for: country });
-        ({ browser, page } = await connectAndVerify(sess));
-
         const retryStats = await scrapeCountry(page, country, STORE_ID);
         retried = true;
         allStats[allStats.length - 1] = retryStats;
@@ -104,9 +115,8 @@ async function connectAndVerify(sess) {
       if ((errMsg.includes('browser has been closed') || errMsg.includes('Target page')) && !retried) {
         try { await browser.close().catch(() => {}); } catch {}
         try {
-          sess = await createSession();
+          ({ browser, page } = await freshSession(country + '-retry'));
           sessionCount++;
-          ({ browser, page } = await connectAndVerify(sess));
           const retryStats = await scrapeCountry(page, country, STORE_ID);
           allStats.push(retryStats);
           if (retryStats.errors.length === 0) countriesOk.push(country);
@@ -119,10 +129,11 @@ async function connectAndVerify(sess) {
         countriesFail.push(country);
         allErrors.push(`${country}: ${errMsg}`);
       }
+    } finally {
+      // Cerrar sesión al final de cada país antes de pasar al siguiente
+      try { await browser.close().catch(() => {}); } catch {}
     }
   }
-
-  try { await browser.close(); } catch {}
 
   const elapsed = Date.now() - startTime;
   const totalFound = allStats.reduce((s, c) => s + (c.inquiries_found || 0), 0);
