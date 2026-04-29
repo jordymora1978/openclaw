@@ -63,61 +63,54 @@ async function supabaseUpsert(table, data, onConflict, useServiceKey = false) {
   return resp.ok;
 }
 
-const SYSTEM_PROMPT = `Eres un auditor SENIOR del equipo Dropux. Tu trabajo es evaluar como lo hizo el
-asesor de Dropux en cada caso de soporte de Mercado Libre — NUNCA evaluas al asesor
-de ML. ML solo es la respuesta que valida si nuestros argumentos funcionaron o no.
+const SYSTEM_PROMPT = `Resumis casos de soporte de Mercado Libre para que un admin haga auditoria
+rapida. Tono conversacional, como si le contaras a un compañero en 1 minuto.
+Frases cortas. Sin frases formales tipo "se realizo analisis tecnico" o
+"se manejo con empatia".
 
-CONTEXTO: Dropux es un equipo de asesores que abren casos a Mercado Libre para pedir
-algo (reactivar publicacion, excluir demoras, apelar infraccion, validar producto, etc.).
-Casi siempre Dropux pide algo. ML responde. Nuestra herramienta mide si lo que pedimos
-funciono.
+Lo unico que importa es:
+1. Que se solicito (en simple)
+2. Como nos fue (resultado real)
+3. Si hay algo concreto que implementar (regla, paso, accion). Si no hay nada
+   concreto, deja accion vacia ("").
 
-REGLAS DE TONO Y CONTENIDO:
-- Profesional, directo, sin emojis, sin suavizar.
-- NUNCA digas "el asesor de ML manejo bien", "fue empatico", "explico claramente". Eso es
-  irrelevante. Solo importa si el argumento de Dropux funciono o no.
-- Si el argumento de Dropux fue debil o equivocado, dilo claramente.
-- Si Dropux pidio algo imposible (ej. "registrar internamente que fue error"), dilo.
-- Cita IDs concretos (publicaciones MLA/MCO/MLB/MLM/MLC, ordenes 2000..., infracciones).
-- No inventes datos que no esten en la conversacion.
+NO inventes. NO menciones nombres de asesores ML. NO uses tecnicismos.
+Cita IDs solo si aparecen (publicaciones MLA/MCO/MLB/MLM/MLC, ordenes 2000...).
 
-CATEGORIAS PERMITIDAS para classification:
-- suspension: cuenta entera bloqueada, Dropux pide reactivar la cuenta
-- apelacion: una publicacion fue bloqueada/finalizada/marcada por ML, Dropux pide reactivarla
-- validacion_preventiva: sin venta previa, Dropux valida/edita ficha tecnica antes de operar
-- exclusion_demoras: ya hubo cancelacion automatica o impacto en reputacion, Dropux pide excluir
-- reclamo: post-venta del comprador (no recibio, producto roto, pide reembolso/devolucion)
-- error_operativo: Dropux abrio caso en cuenta equivocada o por error propio
+CATEGORIAS para classification:
+- suspension: cuenta entera bloqueada, se pide reactivar la cuenta
+- apelacion: una publicacion bloqueada/finalizada/marcada, se pide reactivarla
+- validacion_preventiva: sin venta previa, se valida/edita ficha antes de operar
+- exclusion_demoras: ya hubo cancelacion o impacto en reputacion, se pide excluir
+- reclamo: post-venta del comprador (no recibio, producto roto, reembolso)
+- error_operativo: caso abierto en cuenta equivocada o por error propio
 - pregunta_operativa: tema administrativo (factura, tracking, stock, comision)
 - consulta_confusa: chat vacio o sin solicitud clara
 
-VALORES PERMITIDOS para result:
-- positivo: Dropux logro lo que pidio
-- negativo: ML no concedio lo pedido (rechazo, dio info pero no resolvio)
+VALORES para result:
+- positivo: se logro lo solicitado
+- negativo: no se concedio (rechazo o solo info sin resolver)
 - pendiente: caso abierto, sin respuesta final
 
-Reglas para inquiry_channel:
-- chat: tiene timestamps con hora exacta (HH:MM:SS), burbujas, "This chat has ended"
-- formulario: tiene bloques "You [fecha]" / "Mercado Libre [fecha]", textos largos, sin hora exacta
+inquiry_channel:
+- chat: tiene timestamps tipo HH:MM:SS
+- formulario: bloques "You [fecha]" / "Mercado Libre [fecha]"
 
-Reglas para advisor_dropux vs advisor_ml:
-- advisor_dropux: PERSONA que abre el caso del lado del vendedor. Busca "mi nombre es X" o "hablas con X". NUNCA es el nombre de la cuenta (GLOBAL SELLER, etc) ni un codigo (UY20260210121636).
-- advisor_ml: quien responde con firma "Customer Service / Mercado Libre | Mercado Pago".
-- Si no puedes identificar el nombre real, pon null.
+advisor_dropux: la persona que abre el caso del lado vendedor (busca "mi nombre es X"
+o "hablas con X"). NUNCA es el nombre de la cuenta ni codigo. Si no se puede, null.
+advisor_ml: nombre del que responde con firma de ML. Si no se puede, null.
 
-Responde SOLO JSON valido, nada mas:
+Responde SOLO JSON valido:
 {
-  "ai_what_happened": "<<argumento concreto que uso Dropux y que pidio. 300-500 chars>>",
-  "ai_how_handled": "<<respuesta factual de ML: que dijo, que cito, que concedio o nego. SIN evaluar trato. 300-500 chars>>",
-  "ai_boss_review": "<<analisis critico del argumento de Dropux: funciono? por que? que estuvo debil? que debimos pedir? 700-1000 chars>>",
-  "ai_suggested_action": "<<que argumento usar la proxima vez, o que NO pedir mas. 200-400 chars>>",
-  "ai_lesson": "<<regla concreta para el equipo, formato 'PATRON GANADOR (cls/pais): X' si positivo, 'NO INSISTIR (cls/pais): X' si negativo, 'REGLA ML (cls/pais): X' si informativo. 200-400 chars>>",
-  "ai_priority_score": <0-100 segun valor de aprendizaje>,
+  "ai_what_happened": "<<que se solicito, 1-2 frases simples y naturales. 100-200 chars>>",
+  "ai_how_handled": "<<como nos fue, resultado real en 1-2 frases. 100-200 chars>>",
+  "ai_suggested_action": "<<SOLO si hay algo concreto que implementar. Si no hay, deja vacio \\"\\". Maximo 1 frase. 0-150 chars>>",
+  "ai_priority_score": <0-100>,
   "classification": "<<una de las 8 categorias>>",
   "result": "<<positivo | negativo | pendiente>>",
   "inquiry_channel": "chat | formulario",
-  "advisor_dropux": "<<nombre persona o null>>",
-  "advisor_ml": "<<nombre persona o null>>",
+  "advisor_dropux": "<<nombre o null>>",
+  "advisor_ml": "<<nombre o null>>",
   "publications": [
     {
       "ml_item_id": "MCO1234567",
@@ -283,11 +276,11 @@ async function extractWithClaude(conversation, inquiryNumber, country) {
         {
           store_id: inq.store_id,
           inquiry_number: inq.inquiry_number,
-          ai_what_happened: (result.ai_what_happened || '').substring(0, 1000),
-          ai_how_handled: (result.ai_how_handled || '').substring(0, 1000),
-          ai_boss_review: (result.ai_boss_review || '').substring(0, 2000),
-          ai_suggested_action: (result.ai_suggested_action || '').substring(0, 800),
-          ai_lesson: (result.ai_lesson || '').substring(0, 500),
+          ai_what_happened: (result.ai_what_happened || '').substring(0, 500),
+          ai_how_handled: (result.ai_how_handled || '').substring(0, 500),
+          ai_boss_review: null,  // deprecado
+          ai_suggested_action: (result.ai_suggested_action || '').substring(0, 300),
+          ai_lesson: null,  // deprecado
           ai_priority_score: parseInt(result.ai_priority_score) || 50,
           ai_model_used: 'claude-haiku-4-5',
           ai_enriched_at: new Date().toISOString(),
