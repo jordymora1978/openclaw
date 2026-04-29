@@ -61,9 +61,10 @@ const {execSync, spawn} = require('child_process');
 const SCRIPTS_DIR = '/data/.openclaw/workspace/scripts';
 
 // Horario fijo en Colombia (UTC-5). Tres corridas en ventana de actividad humana.
-// El scraper corre a estas horas; extract-context 30 min después.
-const SCRAPE_HOURS_COL = [10, 13, 17];  // 10 AM, 1 PM, 5 PM Colombia
-const EXTRACT_OFFSET_MIN = 30;
+// Scraper arranca 30 min antes para que el análisis IA esté visible en /inquiries
+// a las horas pico que pidió el usuario: 10 AM, 1 PM, 5 PM.
+const SCRAPE_SCHEDULE_COL = [{ h: 9, m: 30 }, { h: 12, m: 30 }, { h: 16, m: 30 }];
+const EXTRACT_SCHEDULE_COL = [{ h: 10, m: 0 }, { h: 13, m: 0 }, { h: 17, m: 0 }];
 const COL_OFFSET_HOURS = 5;  // Colombia = UTC-5
 
 function runScript(name, args) {
@@ -85,38 +86,35 @@ function runScrapers() {
   if (process.env.BB_CONTEXT_51) runScript('scrape-store.js', ['51']);
 }
 
-// Calcula próximo Date UTC para una hora local Colombia dada (HH 0-23)
-function nextRunFor(colHour, offsetMin) {
+// Devuelve el próximo Date UTC dado un schedule de pares { h, m } en hora Colombia
+function nextRunForSchedule(schedule) {
   const now = new Date();
   const candidates = [];
   for (let dayDelta = 0; dayDelta < 2; dayDelta++) {
-    for (const h of SCRAPE_HOURS_COL) {
+    for (const { h, m } of schedule) {
       const d = new Date(now);
       d.setUTCDate(d.getUTCDate() + dayDelta);
-      d.setUTCHours(h + COL_OFFSET_HOURS, offsetMin || 0, 0, 0);
+      d.setUTCHours(h + COL_OFFSET_HOURS, m, 0, 0);
       if (d > now) candidates.push(d);
     }
-  }
-  if (colHour !== undefined) {
-    return candidates.find(d => d.getUTCHours() === (colHour + COL_OFFSET_HOURS) % 24) || candidates[0];
   }
   return candidates[0];
 }
 
-function scheduleNext(label, fn, offsetMin) {
-  const next = nextRunFor(undefined, offsetMin);
+function scheduleNext(label, fn, schedule) {
+  const next = nextRunForSchedule(schedule);
   const wait = next - new Date();
   console.log(JSON.stringify({ts:new Date().toISOString(),level:'info',action:'scheduled',label,next_utc:next.toISOString(),wait_min:Math.round(wait/60000)}));
   setTimeout(() => {
     fn();
-    setTimeout(() => scheduleNext(label, fn, offsetMin), 60000);  // re-programa después
+    setTimeout(() => scheduleNext(label, fn, schedule), 60000);  // re-programa después
   }, wait);
 }
 
-// Programa scraper a las 10 AM, 1 PM, 5 PM COL
-scheduleNext('scraper', runScrapers, 0);
-// Programa extract-context 30 min después de cada scrape
-scheduleNext('extract-context', () => runScript('extract-context.js'), EXTRACT_OFFSET_MIN);
+// Scraper a 9:30 / 12:30 / 16:30 COL (resultado listo en DB ~10 min después)
+scheduleNext('scraper', runScrapers, SCRAPE_SCHEDULE_COL);
+// Extract-context a 10:00 / 13:00 / 17:00 COL (análisis IA listo ~5 min después)
+scheduleNext('extract-context', () => runScript('extract-context.js'), EXTRACT_SCHEDULE_COL);
 
 // DISABLED 2026-04-23: both competitor scripts share the Browserbase context with
 // scrape-store.js and kill its session mid-run (Colombia always fails). Re-enable
