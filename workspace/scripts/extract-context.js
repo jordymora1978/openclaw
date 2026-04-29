@@ -96,9 +96,25 @@ inquiry_channel:
 - chat: tiene timestamps tipo HH:MM:SS
 - formulario: bloques "You [fecha]" / "Mercado Libre [fecha]"
 
-advisor_dropux: la persona que abre el caso del lado vendedor (busca "mi nombre es X"
-o "hablas con X"). NUNCA es el nombre de la cuenta ni codigo. Si no se puede, null.
-advisor_ml: nombre del que responde con firma de ML. Si no se puede, null.
+REGLA CRITICA para diferenciar advisor_dropux vs advisor_ml:
+1. En los chats hay dos lados claros:
+   - El VENDEDOR (Dropux) escribe siempre con un NICK como "UY20260210121636",
+     "MA20260...", "AR2026..." (codigo de pais + numeros). NUNCA con nombre.
+   - El asesor de MERCADO LIBRE escribe con un NOMBRE HUMANO (Ramiro, Federico,
+     Valentina, Martina, Tomas, Sofia, Abril, Daniela, Rubi, Camilo, etc).
+2. advisor_dropux: el nombre HUMANO de la persona del lado vendedor. Solo lo
+   sabes si el mensaje del nick UY.../MA.../etc dice literalmente
+   "mi nombre es X", "hablas con X", "soy X", o "Hola, soy X". Casi siempre
+   es Yelitza. Si el lado nick nunca dijo su nombre humano, devuelve null.
+3. advisor_ml: el NOMBRE HUMANO que aparece como autor (sin nick) de los
+   mensajes en el chat. Es el del LADO IZQUIERDO conceptualmente.
+4. NUNCA confundas: si en el chat aparece "Hola Ramiro, mi nombre es Yelitza"
+   escrito por el nick UY..., entonces:
+     advisor_dropux = "Yelitza" (porque el lado nick dice "mi nombre es Yelitza")
+     advisor_ml    = "Ramiro"  (porque Ramiro es a quien le habla, y aparece
+                                como autor en el otro lado)
+5. Si no puedes identificar uno de los dos con certeza, devuelve null para
+   ese campo. NUNCA pongas el mismo nombre en los dos.
 
 Responde SOLO JSON valido:
 {
