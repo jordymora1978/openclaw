@@ -13,6 +13,8 @@
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
+// SERVICE_KEY requerido para escribir a ml_support_inquiries_ai (tabla con FORCE RLS service_role)
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
 const MODEL = 'claude-haiku-4-5-20251001';
@@ -40,19 +42,24 @@ async function supabasePost(table, data) {
   return resp.ok;
 }
 
-async function supabaseUpsert(table, data, onConflict) {
+async function supabaseUpsert(table, data, onConflict, useServiceKey = false) {
+  const key = useServiceKey ? SUPABASE_SERVICE_KEY : SUPABASE_KEY;
   const resp = await fetch(
     `${SUPABASE_URL}/rest/v1/${table}?on_conflict=${onConflict}`,
     {
       method: 'POST',
       headers: {
-        'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'apikey': key, 'Authorization': `Bearer ${key}`,
         'Content-Type': 'application/json',
         'Prefer': 'resolution=merge-duplicates,return=minimal',
       },
       body: JSON.stringify(data),
     }
   );
+  if (!resp.ok) {
+    const errBody = await resp.text();
+    log('warn', 'upsert_failed', { table, status: resp.status, error: errBody.substring(0, 200) });
+  }
   return resp.ok;
 }
 
@@ -270,7 +277,7 @@ async function extractWithClaude(conversation, inquiryNumber, country) {
         }),
       });
 
-      // Upsert ml_support_inquiries_ai with full Dropux-first analysis
+      // Upsert ml_support_inquiries_ai con SERVICE_KEY (tabla con FORCE RLS)
       await supabaseUpsert(
         'ml_support_inquiries_ai',
         {
@@ -286,7 +293,8 @@ async function extractWithClaude(conversation, inquiryNumber, country) {
           ai_enriched_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
-        'store_id,inquiry_number'
+        'store_id,inquiry_number',
+        true,  // useServiceKey
       );
 
       extracted++;
