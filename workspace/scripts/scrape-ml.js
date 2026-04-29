@@ -289,15 +289,23 @@ async function scrapeInquiries(page, country) {
           console.log(`[INQUIRIES] Could not read conversation for ${inquiryNumber}`);
         }
 
-        await supabaseUpsert('ml_support_inquiries', {
+        // Si la conversación viene vacía / "Under review", NO sobrescribir el
+        // contenido previo (evita borrar análisis cuando ML aún no respondió).
+        // Sólo se actualiza inquiry_status para reflejar el último estado.
+        const payload = {
           store_id: STORE_ID,
           country: COUNTRY_CODES[country],
           inquiry_number: inquiryNumber,
           inquiry_date: inquiryDate || null,
           inquiry_status: inquiryStatus,
-          summary_text: summaryText,
-          conversation_text: conversationText,
-        });
+        };
+        if (conversationText && conversationText.length > 50) {
+          payload.summary_text = summaryText;
+          payload.conversation_text = conversationText;
+        } else {
+          console.log(`[INQUIRIES] ${inquiryNumber} sin contenido (Under review) — preservando registro previo`);
+        }
+        await supabaseUpsert('ml_support_inquiries', payload);
 
         saved.push(inquiryNumber);
         console.log(`[INQUIRIES] Saved ${inquiryNumber} (${inquiryStatus}) [${existing[inquiryNumber] ? 'updated' : 'new'}]`);
