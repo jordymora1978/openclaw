@@ -1,0 +1,37 @@
+# Dockerfile dedicado para el scraper de inquiries ML.
+# Usa imagen oficial de Playwright (Chromium pre-instalado) → build de ~1-2 min
+# en lugar de los ~10 min del Dockerfile principal de openclaw.
+
+FROM mcr.microsoft.com/playwright:v1.58.2-noble
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+    NODE_ENV=production \
+    PORT=8080
+
+# scrape-store.js hardcodea require('/app/node_modules/playwright-core'),
+# así que las deps DEBEN vivir en /app/node_modules.
+WORKDIR /app
+
+# Instalar solo las dependencias mínimas que usan los scripts
+RUN npm init -y --silent && \
+    npm install --silent --no-audit --no-fund \
+      playwright-core@1.58.2 \
+      @supabase/supabase-js \
+      undici
+
+# Asegurar usuario node
+RUN id -u node >/dev/null 2>&1 || useradd -m -s /bin/bash node
+
+# El entrypoint.sh espera scripts en /home/node/.openclaw/workspace/scripts/
+COPY --chown=node:node workspace/ /home/node/.openclaw/workspace/
+
+# Volumen persistente para Railway (entrypoint hace cp aquí)
+RUN mkdir -p /data/.openclaw && chown -R node:node /data /app
+
+# entrypoint.sh debe ser ejecutable
+RUN chmod +x /home/node/.openclaw/workspace/scripts/entrypoint.sh
+
+EXPOSE 8080
+
+# Corre como root: el propio entrypoint hace `chown` y luego `su node`
+ENTRYPOINT ["/home/node/.openclaw/workspace/scripts/entrypoint.sh"]
