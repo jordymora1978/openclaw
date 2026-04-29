@@ -32,12 +32,25 @@ async function createSession() {
     body: JSON.stringify({
       projectId: BB_PROJECT, region: 'us-east-1',
       browserSettings: { solveCaptchas: true, context: { id: BB_CONTEXT, persist: true } },
-      keepAlive: true,
+      // keepAlive removido: con true las sesiones quedaban zombies 5 min facturando
+      // tras el browser.close(). Sin keepAlive, mueren al desconectar el browser.
     }),
   });
   const sess = await resp.json();
   if (!sess.connectUrl) throw new Error(`Session failed: ${JSON.stringify(sess).substring(0, 200)}`);
   return sess;
+}
+
+// Termina explícitamente la sesión Browserbase (sin esperar idle timeout)
+async function endSession(sessionId) {
+  if (!sessionId) return;
+  try {
+    await fetch(`https://api.browserbase.com/v1/sessions/${sessionId}`, {
+      method: 'POST',
+      headers: { 'x-bb-api-key': BB_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId: BB_PROJECT, status: 'REQUEST_RELEASE' }),
+    });
+  } catch {}
 }
 
 async function connectAndVerify(sess) {
@@ -61,6 +74,12 @@ async function freshSession(label) {
   return { sess, browser, page };
 }
 
+// Cierra browser + termina sesión Browserbase para que no quede zombie
+async function teardown(browser, sess) {
+  try { await browser?.close().catch(() => {}); } catch {}
+  await endSession(sess?.id);
+}
+
 (async () => {
   const startTime = Date.now();
   log('info', 'start', { name: STORE_NAME, countries: COUNTRIES, strategy: 'session-per-country' });
@@ -74,9 +93,9 @@ async function freshSession(label) {
   // ESTRATEGIA POR GRUPOS: una sesión Browserbase fresca por cada país.
   // Evita que la sesión muera tras 5+ min de uso intenso (root cause del fallo previo).
   for (const country of COUNTRIES) {
-    let browser, page;
+    let browser, page, sess;
     try {
-      ({ browser, page } = await freshSession(country));
+      ({ sess, browser, page } = await freshSession(country));
       sessionCount++;
     } catch (e) {
       log('error', 'session_init_failed', { country, error: e.message.split('\n')[0] });
@@ -95,8 +114,8 @@ async function freshSession(label) {
 
       if (sessionDied && saved < stats.inquiries_found) {
         log('warn', 'session_died', { country, saved, found: stats.inquiries_found });
-        try { await browser.close().catch(() => {}); } catch {}
-        ({ browser, page } = await freshSession(country + '-retry'));
+        await teardown(browser, sess);
+        ({ sess, browser, page } = await freshSession(country + '-retry'));
         sessionCount++;
         const retryStats = await scrapeCountry(page, country, STORE_ID);
         retried = true;
@@ -113,9 +132,9 @@ async function freshSession(label) {
     } catch (e) {
       const errMsg = e.message.split('\n')[0];
       if ((errMsg.includes('browser has been closed') || errMsg.includes('Target page')) && !retried) {
-        try { await browser.close().catch(() => {}); } catch {}
+        await teardown(browser, sess);
         try {
-          ({ browser, page } = await freshSession(country + '-retry'));
+          ({ sess, browser, page } = await freshSession(country + '-retry'));
           sessionCount++;
           const retryStats = await scrapeCountry(page, country, STORE_ID);
           allStats.push(retryStats);
@@ -130,8 +149,8 @@ async function freshSession(label) {
         allErrors.push(`${country}: ${errMsg}`);
       }
     } finally {
-      // Cerrar sesión al final de cada país antes de pasar al siguiente
-      try { await browser.close().catch(() => {}); } catch {}
+      // Cerrar browser + terminar sesión Browserbase explícitamente para no quedar zombie
+      await teardown(browser, sess);
     }
   }
 
