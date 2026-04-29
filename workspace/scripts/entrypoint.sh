@@ -58,8 +58,13 @@ echo "[entrypoint] Starting scheduler..."
 exec su -s /bin/bash node -c "node -e \"
 const http = require('http');
 const {execSync, spawn} = require('child_process');
-const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const SCRIPTS_DIR = '/data/.openclaw/workspace/scripts';
+
+// Horario fijo en Colombia (UTC-5). Tres corridas en ventana de actividad humana.
+// El scraper corre a estas horas; extract-context 30 min después.
+const SCRAPE_HOURS_COL = [10, 13, 17];  // 10 AM, 1 PM, 5 PM Colombia
+const EXTRACT_OFFSET_MIN = 30;
+const COL_OFFSET_HOURS = 5;  // Colombia = UTC-5
 
 function runScript(name, args) {
   const label = args ? name+' '+args.join(' ') : name;
@@ -75,19 +80,43 @@ function runScript(name, args) {
   });
 }
 
-// Run scrapers in PARALLEL — each store independent
 function runScrapers() {
   if (process.env.BB_CONTEXT_49) runScript('scrape-store.js', ['49']);
   if (process.env.BB_CONTEXT_51) runScript('scrape-store.js', ['51']);
 }
-runScrapers();
-setInterval(runScrapers, INTERVAL_MS);
 
-// Extract context from conversations 30min after scraper + every 6h
-setTimeout(() => {
-  runScript('extract-context.js');
-  setInterval(() => runScript('extract-context.js'), INTERVAL_MS);
-}, 30*60*1000);
+// Calcula próximo Date UTC para una hora local Colombia dada (HH 0-23)
+function nextRunFor(colHour, offsetMin) {
+  const now = new Date();
+  const candidates = [];
+  for (let dayDelta = 0; dayDelta < 2; dayDelta++) {
+    for (const h of SCRAPE_HOURS_COL) {
+      const d = new Date(now);
+      d.setUTCDate(d.getUTCDate() + dayDelta);
+      d.setUTCHours(h + COL_OFFSET_HOURS, offsetMin || 0, 0, 0);
+      if (d > now) candidates.push(d);
+    }
+  }
+  if (colHour !== undefined) {
+    return candidates.find(d => d.getUTCHours() === (colHour + COL_OFFSET_HOURS) % 24) || candidates[0];
+  }
+  return candidates[0];
+}
+
+function scheduleNext(label, fn, offsetMin) {
+  const next = nextRunFor(undefined, offsetMin);
+  const wait = next - new Date();
+  console.log(JSON.stringify({ts:new Date().toISOString(),level:'info',action:'scheduled',label,next_utc:next.toISOString(),wait_min:Math.round(wait/60000)}));
+  setTimeout(() => {
+    fn();
+    setTimeout(() => scheduleNext(label, fn, offsetMin), 60000);  // re-programa después
+  }, wait);
+}
+
+// Programa scraper a las 10 AM, 1 PM, 5 PM COL
+scheduleNext('scraper', runScrapers, 0);
+// Programa extract-context 30 min después de cada scrape
+scheduleNext('extract-context', () => runScript('extract-context.js'), EXTRACT_OFFSET_MIN);
 
 // DISABLED 2026-04-23: both competitor scripts share the Browserbase context with
 // scrape-store.js and kill its session mid-run (Colombia always fails). Re-enable
