@@ -118,9 +118,8 @@ REGLA CRITICA para diferenciar advisor_dropux vs advisor_ml:
 
 Responde SOLO JSON valido:
 {
-  "ai_what_happened": "<<que se solicito, 1-2 frases simples y naturales. 100-200 chars>>",
-  "ai_how_handled": "<<como nos fue, resultado real en 1-2 frases. 100-200 chars>>",
-  "ai_suggested_action": "<<SOLO si hay algo concreto que implementar. Si no hay, deja vacio \\"\\". Maximo 1 frase. 0-150 chars>>",
+  "detailed": "<<analisis markdown estructurado con secciones, 800-2000 chars. Formato exacto descrito abajo>>",
+  "tasks": ["tarea 1 corta accionable", "tarea 2", "..."],
   "ai_priority_score": <0-100>,
   "classification": "<<una de las 8 categorias>>",
   "result": "<<positivo | negativo | pendiente>>",
@@ -136,6 +135,34 @@ Responde SOLO JSON valido:
     }
   ]
 }
+
+FORMATO EXACTO de "detailed" (markdown con secciones, headers en negritas SOLOS en una linea):
+
+**Situacion**
+1-2 frases del contexto.
+
+**Problema**
+detalles tecnicos. IDs/sustancias/regulaciones en **negrillas**.
+
+**Respuesta del asesor**
+Que dijo/hizo. **nombre asesor** en negritas. URLs literales.
+
+**Resultado**
+Estado final.
+
+**Datos clave**
+- Caso: numero
+- Asesor ML: nombre
+- (otros datos: publicaciones, ordenes, regulaciones, ASINs, URLs)
+
+REGLAS de "detailed":
+- Headers de seccion van SOLOS en una linea (ej: **Situacion** sin nada mas)
+- Linea en blanco entre secciones
+- Si una seccion no aplica, omitirla
+- Parrafos cortos
+- NO usar **negrillas** como subheaders dentro de Datos clave (solo guiones)
+
+REGLAS de "tasks": 3-7 tareas accionables, cada una max 80 chars, ordenadas por prioridad.
 
 ai_priority_score:
 - 0-30: rutinario, leccion ya conocida
@@ -385,19 +412,26 @@ async function extractWithClaude(conversation, inquiryNumber, country) {
         }),
       });
 
-      // Upsert ml_support_inquiries_ai con SERVICE_KEY (tabla con FORCE RLS)
+      // Upsert ml_support_inquiries_ai con SERVICE_KEY (tabla con FORCE RLS).
+      // Formato v2: ai_what_happened lleva el markdown estructurado completo
+      // (Situacion / Problema / Respuesta del asesor / Resultado / Datos clave),
+      // ai_suggested_action lleva las tareas como lista markdown con guiones.
+      const detailedMd = (result.detailed || '').substring(0, 2000);
+      const tasksMd = Array.isArray(result.tasks)
+        ? result.tasks.filter(t => t && t.trim()).map(t => '- ' + t.trim()).join('\n').substring(0, 800)
+        : '';
       await supabaseUpsert(
         'ml_support_inquiries_ai',
         {
           store_id: inq.store_id,
           inquiry_number: inq.inquiry_number,
-          ai_what_happened: (result.ai_what_happened || '').substring(0, 500),
-          ai_how_handled: (result.ai_how_handled || '').substring(0, 500),
-          ai_boss_review: null,  // deprecado
-          ai_suggested_action: (result.ai_suggested_action || '').substring(0, 300),
-          ai_lesson: null,  // deprecado
-          ai_priority_score: parseInt(result.ai_priority_score) || 50,
-          ai_model_used: 'claude-haiku-4-5',
+          ai_what_happened: detailedMd,
+          ai_how_handled: '',
+          ai_boss_review: null,
+          ai_suggested_action: tasksMd,
+          ai_lesson: null,
+          ai_priority_score: parseInt(result.ai_priority_score) || 60,
+          ai_model_used: 'claude-haiku-4-5-v2',
           ai_enriched_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         },
