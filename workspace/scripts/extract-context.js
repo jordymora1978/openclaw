@@ -183,7 +183,7 @@ const SELF_INTRO_PATTERNS = [
   /mi\s+nombre\s+es\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)/gi,
   /me\s+llamo\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)/gi,
   /\bsoy\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b/gi,
-  /hablas?\s+con\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)/gi,
+  /\bhabla(?:s)?\s+(?:con\s+)?([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)/gi,
 ];
 
 // Palabras genericas que NO son nombres reales
