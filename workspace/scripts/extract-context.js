@@ -150,6 +150,91 @@ const VALID_CLS = new Set([
 ]);
 const RESULT_TO_LEGACY = { positivo: 'resuelto', negativo: 'rechazado', pendiente: 'pendiente' };
 
+// Patrones de presentacion. Capturan el primer nombre humano que sigue.
+// Ej: "Mi nombre es Yelitza" -> capture "Yelitza".
+const SELF_INTRO_PATTERNS = [
+  /mi\s+nombre\s+es\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)/gi,
+  /me\s+llamo\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)/gi,
+  /\bsoy\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b/gi,
+  /hablas?\s+con\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)/gi,
+];
+
+// Palabras genericas que NO son nombres reales
+const GENERIC_NAMES = new Set([
+  'representante','asesor','asesora','vendedor','vendedora','equipo',
+  'quien','que','el','la','un','una','tu','mi','su','este','esta',
+]);
+
+// Marcadores que indican que el "X" introducido es del lado de Mercado Libre
+const ML_MARKERS = [
+  'representante de mercado libre',
+  'tu representante',
+  'mercado libre',
+  'mercado pago',
+  'customer service',
+];
+
+// Detecta nick del lado vendedor (Dropux): pais (2 letras) + 10+ digitos
+const DROPUX_NICK_RE = /\b([A-Z]{2})\d{10,}\b/;
+
+/**
+ * Extrae advisor_dropux del texto del chat usando reglas deterministas.
+ * Retorna null si no encuentra evidencia confiable.
+ *
+ * @param {string} conversation - texto completo del chat
+ * @param {string|null} advisorMl - nombre del asesor ML ya identificado por Claude
+ * @param {string|null} channel - "chat" | "formulario"
+ * @returns {string|null}
+ */
+function extractDropuxAdvisor(conversation, advisorMl, channel) {
+  if (!conversation) return null;
+  if (channel && channel.toLowerCase() === 'formulario') return null;
+
+  const mlNorm = (advisorMl || '').trim().toLowerCase();
+  const candidates = [];
+
+  for (const pattern of SELF_INTRO_PATTERNS) {
+    pattern.lastIndex = 0;
+    let m;
+    while ((m = pattern.exec(conversation)) !== null) {
+      const name = m[1];
+      if (!name) continue;
+      const lower = name.toLowerCase();
+      if (GENERIC_NAMES.has(lower)) continue;
+      // Contexto: 120 chars antes y despues del match
+      const start = Math.max(0, m.index - 60);
+      const end = Math.min(conversation.length, m.index + m[0].length + 200);
+      const ctxLower = conversation.substring(start, end).toLowerCase();
+
+      // Capa 1: si el contexto contiene marcadores de ML, descartar
+      const isMl = ML_MARKERS.some(mk => ctxLower.includes(mk));
+      // Capa 2: si despues del mensaje aparece un nick Dropux, fuerte señal de Dropux
+      const afterMsg = conversation.substring(m.index + m[0].length, m.index + m[0].length + 250);
+      const hasDropuxNick = DROPUX_NICK_RE.test(afterMsg);
+      // Capa 3: si coincide con el ML ya extraido por Claude, descartar
+      const equalsMl = mlNorm && lower === mlNorm;
+
+      let score = 1;
+      if (hasDropuxNick) score += 3;   // muy fuerte
+      if (isMl) score -= 5;            // descalificante
+      if (equalsMl) score -= 5;        // descalificante
+
+      if (score > 0) candidates.push({ name, score, idx: m.index });
+    }
+  }
+
+  if (!candidates.length) {
+    // Fallback: si "Yelitza" aparece 3+ veces y hay nick Dropux en algun lado, asumir Yelitza
+    const yelitzaCount = (conversation.match(/yelitza/gi) || []).length;
+    if (yelitzaCount >= 3 && DROPUX_NICK_RE.test(conversation)) return 'Yelitza';
+    return null;
+  }
+
+  // Mejor candidato: mayor score, luego primer aparicion
+  candidates.sort((a, b) => (b.score - a.score) || (a.idx - b.idx));
+  return candidates[0].name;
+}
+
 async function extractWithClaude(conversation, inquiryNumber, country) {
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -233,6 +318,20 @@ async function extractWithClaude(conversation, inquiryNumber, country) {
 
       const result = await extractWithClaude(inq.conversation_text, inq.inquiry_number, inq.country);
       if (!result) { errors++; continue; }
+
+      // Fallback determinista para advisor_dropux cuando Claude no lo identifica.
+      // El formato del scraper pone el nick despues del mensaje, lo que confunde al LLM.
+      if (!result.advisor_dropux) {
+        const dropuxByRegex = extractDropuxAdvisor(
+          inq.conversation_text,
+          result.advisor_ml,
+          result.inquiry_channel,
+        );
+        if (dropuxByRegex) {
+          result.advisor_dropux = dropuxByRegex;
+          log('info', 'advisor_dropux_via_regex', { inquiry: inq.inquiry_number, name: dropuxByRegex });
+        }
+      }
 
       // Per-publication events in publication_history
       for (const pub of (result.publications || [])) {
